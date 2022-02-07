@@ -1,6 +1,6 @@
 # accord-ivy
 
-The Accord consensus protocol in IVy, formally-verified to have [zarro
+The Accord consensus protocol in IVy, with [zarro
 boogs](https://www.youtube.com/watch?v=4Q7FTjhvZ7Y&t=1098s)
 
 ## Authors
@@ -42,5 +42,5 @@ $ make bmc   ; run BMC
 $ make       ; all of the above
 ```
 
-CEP: https://cwiki.apache.org/confluence/display/CASSANDRA/CEP-15%3A+General+Purpose+Transactions
-whitepaper: https://cwiki.apache.org/confluence/download/attachments/188744725/Accord.pdf?version=2&modificationDate=1637000779000&api=v2
+[CEP]: https://cwiki.apache.org/confluence/display/CASSANDRA/CEP-15%3A+General+Purpose+Transactions
+[whitepaper]: https://cwiki.apache.org/confluence/download/attachments/188744725/Accord.pdf?version=2&modificationDate=1637000779000&api=v2
