@@ -1,0 +1,27 @@
+#lang ivy1.8
+
+include network
+include numbers
+include collections
+
+include temporality
+include types
+
+module server_rpc(txn_t) = {
+    # All server messages are internal to the tuplespace implementation;
+    # clients do not directly send these messages but simply "call into" the
+    # tuplespace with exported actions.
+
+    class msg_t = {
+        # The operation to take when a server_id receives a particular message.
+        action handle(cid: coord_id, ^msg:msg_t)
+    }
+
+    subclass preaccept_msg_t of msg_t = {
+        field src: coord_id
+        field t: txn_t
+        field ts: timestamp
+
+        action handle(self: coord_id, ^msg:preaccept_msg_t)
+    }
+}

@@ -1,0 +1,17 @@
+#lang ivy1.8
+
+include messages
+include temporality
+include types
+
+type t
+instance server_rpc(t)
+
+process coordinator(cid: coord_id) = {
+    instance clock : time(cid)
+
+    implement preaccept_msg_t.handle(msg: preaccept_msg_t) {
+        debug "preaccept_msg_t.handle" with msg=msg;
+    }
+}
+

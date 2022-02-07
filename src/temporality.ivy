@@ -1,0 +1,78 @@
+#lang ivy1.8
+
+# Some functionality for logical timestamp operations.
+
+include collections
+include order
+include types
+
+global {
+    instance walltime : unbounded_sequence
+    instance sequence : unbounded_sequence
+
+    class timestamp = {
+        field real : walltime
+        field seqid: sequence
+        field host : coord_id
+    }
+}
+
+module time(cid: coord_id) = {
+
+    implementation {
+        var curr_time   : walltime
+        var last_issued : timestamp
+
+        after init {
+            curr_time := 1;
+            last_issued.real := 0;
+            last_issued.seqid := 0;
+            last_issued.host := cid;
+
+            prev_issued := last_issued; #ghost
+        }
+
+        # Advance time on occasion.
+        export action tick
+        implement tick {
+            curr_time := curr_time.next;
+        }
+
+        # Get "the current time".
+        export action now returns (ret : timestamp)
+        implement now {
+            ret.host := cid;
+            
+            # The Java implementation appears to not guarantee a monotonic
+            # local clock, so this functionality is taken from there.
+            if curr_time > last_issued.real {
+                ret.real := curr_time;
+                ret.seqid := 0;
+            } else {
+                ret.real := last_issued.real;
+                ret.seqid := last_issued.seqid.next;
+            }
+            prev_issued := last_issued; #ghost
+            last_issued := ret;
+        }
+
+        function ts_lt(LHS: timestamp, RHS: timestamp) =
+            LHS.real < RHS.real |
+            LHS.real = RHS.real & LHS.seqid < RHS.seqid | 
+            LHS.real = RHS.real & LHS.seqid = RHS.seqid & LHS.host < RHS.host
+
+        #TODO: How to put an upper bound?
+        #invariant [ts_lt_nonreflexivity] ts_lt(TS,TS) = false
+    } 
+
+    specification {
+        var prev_issued : timestamp
+        after now {
+            # Our clock must always move forward, no matter how coarse the real
+            # clock is.
+            ensure ts_lt(prev_issued, last_issued); 
+        }
+    }
+}
+
+#axiom host(0).sock.id ~= host(1).sock.id

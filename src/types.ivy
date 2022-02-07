@@ -1,0 +1,7 @@
+#lang ivy1.8
+
+include order
+
+global {
+    instance coord_id : iterable
+}

@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# This script is meant to be called by Git before a commit operation.  You may
+# need to run $(git config core.hooksPath ./scripts/ ) from the root of your
+# repository if it is not automatically running.
+
+todos=$(git grep TODO | grep -v "$(basename $0)" | cut -d':' -f 1 | uniq -c)
+if [[ -z $todos ]]
+then
+    echo "No outstanding TODOs! ヽ(‘ー\`)ノ "
+else
+    echo "Outstanding TODOs:"
+    echo "$todos"
+fi
