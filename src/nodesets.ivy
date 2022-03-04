@@ -1,26 +1,28 @@
 #lang ivy1.8
 
-# This file contains a specification and implementation of node sets with a majority test.
-# 
 
 include order
 include collections
 
-instance node : iterable
+include types
 
-# node sets
-
-isolate nset = {
+# Adapted from CS 395T homework 6.  This is a standard nodpset, with 
+# an additional membership constraint: an element can only be added
+# to the set if it satisfies a constraint predicate.   
+isolate pset = {
 
     type this
     alias t = this
     type index
 
-    relation member(N:node, S:t)
+    relation member(N:coord_id, S:t)
     relation majority(S:t)
 
     action emptyset returns (s:t) 
-    action add(s:t, n : node) returns (s:t) 
+    action add(s:t, n : coord_id) returns (s:t) 
+
+    # Returns whether the id is valid for our subset.
+    action valid(n: coord_id) returns (ret:bool)
 
     specification {
         after emptyset {
@@ -28,6 +30,7 @@ isolate nset = {
         }
 
         after add {
+            require valid(n);
             ensure member(N,s) <-> (member(N , old s) | N = n)
         }
     }
@@ -40,9 +43,9 @@ isolate nset = {
     implementation {
         interpret index -> int
         function card(S:t) : index
-        instance arr : rel_array(index,node)
-        destructor repr(N:nset) : arr
-        individual all : nset
+        instance arr : rel_array(index,coord_id)
+        destructor repr(N:this) : arr
+        individual all : this
 	
         definition member(N,S) = exists I. 0 <= I & I < repr(S).end & repr(S).value_is(I, N)
         definition majority(S) = card(S) + card(S) > card(all)
@@ -50,16 +53,16 @@ isolate nset = {
         after init {
             card(S) := 0;
             repr(all) := arr.empty;
-            var i := node.iter.create(0);
+            var i := coord_id.iter.create(0);
             while ~i.is_end
                 invariant (forall N.~(member(N,S) & member(N,T))) ->
                               card(S) + card(T) <= card(all)
-                invariant node.iter.done(N,i) <-> member(N,all)
-                invariant (forall N.(node.iter.done(N,i) -> member(N,S))) -> card(S) >= card(all)
+                invariant coord_id.iter.done(N,i) <-> member(N,all)
+                invariant (forall N.(coord_id.iter.done(N,i) -> member(N,S))) -> card(S) >= card(all)
                 invariant card(S) >= 0
             {
                 repr(all) := repr(all).append(i.val);
-        	card(S) := card(S) + 1 if member(i.val, S) else card(S);
+        	card(S) := card(S) + 1 if valid(i.val) & member(i.val, S) else card(S);
                 i := i.next
             };
         }
@@ -79,5 +82,10 @@ isolate nset = {
     # it goes crazy. For some reason it does here, so we turn it off.
     
     attribute macro_finder = false
+}
 
-} with node
+isolate nset = {
+    implement pset.valid {
+        ret := true;
+    }
+} with pset

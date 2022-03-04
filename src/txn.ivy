@@ -1,0 +1,94 @@
+#lang ivy1.8
+
+include collections
+include types
+
+# Leave these uninterpreted here: TODO: where should they actually
+# be interpreted?
+type key
+type value
+
+type txn_kind_t = { read_kind, write_kind }
+
+class txn_t = {
+    alias t = this
+
+    instance iter : order_iterator(this)
+    isolate iso_iter = iter with this
+
+    field kind: txn_kind_t
+    field keys: vector[key]
+    field vals: option[vector[value]]
+
+    field pre_accepted: bool
+    
+    field t0: timestamp
+
+    definition (LHS: txn_t < RHS: txn_t) : bool = 
+        (exists I. 0 <= I & I < index.max2(LHS.keys.end(), RHS.keys.end()) &
+        (forall J. 0 <= J & J < I ->
+            LHS.keys.value(J) = RHS.keys.value(J) &
+            LHS.keys.value(I) < RHS.keys.value(I)))
+}
+
+
+function overlapping_readsets(ks1: vector[key], ks2: vector[key]) : bool =
+   exists I1, I2. ks1.begin() < I1 & I1 < ks1.end() 
+                & ks2.begin() < I2 & I2 < ks2.end()
+                & ks1.value(I1) = ks2.value(I2)
+
+
+# A command is a particular transation to be executed at a given logical time.
+# Nodes will also need to keep track of commands that they know about yet but
+# can't execute the command until time passes (as there may be a concurrent
+# transaction yet to arrive).
+#class cmd_t = {
+#    # TODO: transaction id??
+#    field txn: txn_t
+#    field ts: timestamp
+#}
+
+# In the Java implementation, a CommandBuffer is sharded by key.  For simplicity
+# let's be sloppier for now.
+alias store_buffer = vector[txn_t]
+
+action max_conflict(txn: txn_t, sb: store_buffer) returns (ret: timestamp) = {
+    var opt_ret: option[timestamp];
+    opt_ret := option[timestamp].empty;
+
+    var it := sb.begin();
+    var e := sb.end();
+    while it ~= e {
+        var cur := sb.value(it);
+
+        # TODO: if both cmds are reads, not a conflict?
+        if overlapping_readsets(txn.keys, cur.keys) {
+            if opt_ret.is_empty | ts_lt(opt_ret.contents(), cur.t0) {
+                opt_ret := option[timestamp].just(cur.t0);
+            }
+
+            it := it.next();
+        }
+    }
+
+    if opt_ret.is_empty {
+        ret.real := 0;
+        ret.seqid := 0;
+        ret.host := 0;
+    } else {
+        ret := opt_ret.contents();
+    }
+}
+
+action dependencies(txn: txn_t, sb: store_buffer) returns (deps: vector[txn_t]) = {
+    var it := sb.begin();
+    var e := sb.end();
+    while it ~= e {
+        var gamma := sb.value(it);
+
+        if overlapping_readsets(txn.keys, gamma.keys) & ts_lt(gamma.t0, txn.t0) {
+            deps := deps.append(gamma);  
+            it := it.next();
+        }
+    }
+}
