@@ -6,7 +6,7 @@ CC=ivyc
 CFLAGS=target=test
 
 LCH=ivy_launch
-LCHFLAGS=coord_id.max=2
+LCHFLAGS=node.max=3
 EXE=protocol
 
 CHK=ivy_check

@@ -1,7 +1,23 @@
 #lang ivy1.8
-
+include collections
 include order
 
-global {
-    instance coord_id : iterable
+instance node : iterable
+
+# Not actually a node, but a value on [0, node.max)
+# that bounds the size of an electorate.
+#var max_failures : node
+
+type status = {
+    notWitnessed,
+    preAccepted,
+    accepted,
+    committed,
+    readyToExecute,
+    executed,
+    applied
 }
+
+
+type txn_kind_t = { read_kind, write_kind }
+

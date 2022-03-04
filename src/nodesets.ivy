@@ -4,88 +4,221 @@
 include order
 include collections
 
-include types
-
-# Adapted from CS 395T homework 6.  This is a standard nodpset, with 
-# an additional membership constraint: an element can only be added
-# to the set if it satisfies a constraint predicate.   
-isolate pset = {
+module indexset(basis) = {
 
     type this
-    alias t = this
-    type index
+    alias set = this
+    instance index : unbounded_sequence
 
-    relation member(N:coord_id, S:t)
-    relation majority(S:t)
+    relation member(E:basis,S:set)
+    function card(S:set) : index.t
+    function cardInter(S:set, T:set) : index.t
+    relation majority(S:set, T: set)
+    function intersection(S: set, T: set) : set
 
-    action emptyset returns (s:t) 
-    action add(s:t, n : coord_id) returns (s:t) 
+    action emptyset returns(s:set)
+    action fullset returns(s:set)
+    action add(s:set,e:basis) returns (s:set)
+    action is_empty(s:set) returns(r:bool)
 
-    # Returns whether the id is valid for our subset.
-    action valid(n: coord_id) returns (ret:bool)
+    object spec = {
 
-    specification {
         after emptyset {
-            ensure ~member(N, s)
+            assert ~member(E,s);
+        }
+
+        after fullset {
+            assert member(E,s);
         }
 
         after add {
-            require valid(n);
-            ensure member(N,s) <-> (member(N , old s) | N = n)
+            assert member(X,s) <-> (member(X,old s) | X = e)
+        }
+
+        after is_empty {
+            assert r <-> ~ exists X. member(X,s)
         }
     }
 
-    private {
-        invariant [majorities_intersect]
-            (majority(S) & majority(T)) -> exists N. member(N,S) & member(N,T)
+    function cnt(E:basis) : index.t
+    relation disjoint(X:set,Y:set)
+
+    trusted isolate majorities_intersect = {
+
+        object impl = {
+            # The funtion cnt(x) returns the cardinality of the set of
+            # ordinals < x. We define it recursively by instantiating
+            # the recursion schema for the basis type.
+
+            # Note here we use a definition schema. A definition of the form
+            # `f(x:t) = ...` is a shorthand for this schema:
+            #
+            #     # {
+            #     #     individual x :t
+            #     #     #----------------
+            #     #     property f(x) = ...
+            #     # }
+            #
+            # The `auto` tactic will only unfold this definition
+            # schema for ground terms *x* occurring in the proof
+            # goal. Without this, we would exit the decidable
+            # fragment, due to a quantified variable under an
+            # arithmetic operator in the following definition.
+
+            definition cnt(x:basis) = 1 if x <= 0 else cnt(x-1) + 1
+            proof
+            apply rec[basis]
+
+            # We define cardinality in terms of a recursive function
+            # cardUpTo that counts the number of elements in a set
+            # that are less than or equal to a bound B.
+
+            function cardUpTo(S:set,B:basis) : index.t
+
+            # Note that again the we use definition schema to stay
+            # decidable. Again, the `rec[t]` schema is used to admit a
+            # recursive definition.
+
+            definition cardUpTo(s:set,b:basis) =
+            (1 if member(b,s) else 0) if b <= 0
+            else (cardUpTo(s,b-1) + (1 if member(b,s) else 0))
+            proof
+            apply rec[basis]
+
+            # The cardinality function is then defined in terms of cardUpTo.
+
+            definition card(S) = cardUpTo(S,basis.max)
+
+            function cardInterUpTo(S:set,T:set,B:basis) : index.t
+
+            # Note that again the we use definition schema to stay
+            # decidable. Again, the `rec[t]` schema is used to admit a
+            # recursive definition.
+
+            definition cardInterUpTo(s1:set,s2:set, b:basis) =
+            (1 if member(b,s1) & member(b,s2) else 0) if b <= 0
+            else (cardInterUpTo(s1,s2,b-1) + (1 if member(b,s1) & member(b,s2) else 0))
+            proof
+            apply rec[basis]
+            # A majority is a set whose cardinality is greater than 1/2 of
+            # the basis set.
+
+            definition cardInter(S,T) = cardInterUpTo(S,T,basis.max)
+
+            definition majority(X,Y) = 2 * cardInter(X,Y) > card(Y)
+
+            object spec = {
+                # This is the definition of dijoint sets in terms of
+                # the member relation.  Notice that there is a
+                # quantifier alternation in the direction set ->
+                # basis.
+
+                definition 
+                disjoint(X,Y) = forall E. ~(member(E,X) & member(E,Y))
+
+                # This is our inductive invariant. It says that, for
+                # disjoint sets, the sum of the cardinalities up to
+                # bound B is less than the total number of elements
+                # less than B. We prove it by induction on B, using
+                # the induction schema for type `basis`. As usual,
+                # we have to giev the induction parameter explicitly,
+                # since Ivy can't infer it automatically.
+
+                # Most importantly, notice how arithmetic is used
+                # here. Because we used definition schemata, we never
+                # have an arithmetic applied to a universally
+                # quantified variable. This means our verification condition
+                # is is in the essentially uninterpreted fragment.
+
+                property disjoint(X,Y) -> cardUpTo(X,B) + cardUpTo(Y,B) <= cnt(B)
+                proof {
+                    apply ind[basis] with X = B
+                }
+            }
+
+        }
+
+        object spec = {
+
+            # With the above lemma, Z3 can prove the "majorities intersect"
+            # property. The idea is that the lemma can be specialized to this:
+            #
+            #      # property disjoint(X,Y) -> card(X) + card(Y) <= cnt(basis.max)
+            # 
+            # Since both majorities have cardinality greater than
+            # `cnt(basis.max)/2`, it follows that majorities cannot be
+            # disjoint, so they must have an element in common.
+
+            property majority(X,Z) & majority(Y,Z) -> exists E. (member(E,X) & member(E,Y))
+        }
+
+        attribute test = impl
     }
+    with basis.impl,index.impl
 
-    implementation {
-        interpret index -> int
-        function card(S:t) : index
-        instance arr : rel_array(index,coord_id)
-        destructor repr(N:this) : arr
-        individual all : this
-	
-        definition member(N,S) = exists I. 0 <= I & I < repr(S).end & repr(S).value_is(I, N)
-        definition majority(S) = card(S) + card(S) > card(all)
+    # Note: we use the *implementations* of the basis and index
+    # types. That means both are interpreted. Fortunately, we don't
+    # run afoul of the fragment checker.
 
-        after init {
-            card(S) := 0;
-            repr(all) := arr.empty;
-            var i := coord_id.iter.create(0);
-            while ~i.is_end
-                invariant (forall N.~(member(N,S) & member(N,T))) ->
-                              card(S) + card(T) <= card(all)
-                invariant coord_id.iter.done(N,i) <-> member(N,all)
-                invariant (forall N.(coord_id.iter.done(N,i) -> member(N,S))) -> card(S) >= card(all)
-                invariant card(S) >= 0
-            {
-                repr(all) := repr(all).append(i.val);
-        	card(S) := card(S) + 1 if valid(i.val) & member(i.val, S) else card(S);
-                i := i.next
-            };
-        }
+    isolate api = {
 
-        implement emptyset {
-            repr(s) := arr.empty()
-        }
+        object impl = {
+            # Here is the implementation of the set type using an unsorted array.
 
-        implement add {
-            if ~member(n, s) {
-                repr(s) := repr(s).append(n)
+            instance arridx : unbounded_sequence
+            instance arr:array(arridx,basis)
+
+            # Tricky: this is a bit of aspect-orientation. It turns the type `set` into a struct
+            # with just one field called `repr`. This field gives the concrete representation of a
+            # set as an array. To an isolate that doesn't use the definition of `member` below,
+            # the type `set` will still appear to be uninterpreted.
+
+            destructor repr(X:set) : arr.t
+
+            definition member(y:basis,X:set) = 
+              exists Z : arridx. 
+                0 <= Z 
+                & Z < repr(X).end 
+                & repr(X).value(Z) = y
+
+            # These lemmas are needed to prove correctness of is_empty. 
+
+            property member(Y,X) -> repr(X).end ~= 0
+            property repr(X).end ~= 0 -> member(repr(X).value(0),X)
+
+            implement emptyset {
+                repr(s) := arr.create(0,0)
+            }
+
+            implement fullset {
+                repr(s) := arr.create(0,0);
+                var it :=  basis.iter.begin;
+                var en := basis.iter.end;
+                while it < en
+                invariant basis.iter.done(X,it) -> member(X,s)
+                {
+                    repr(s) := repr(s).append(it.value);
+                    it := it.next;
+                }
+            }
+
+            implement add {
+                if ~member(e,s) {
+                    repr(s) := arr.resize(repr(s),repr(s).end.next,e)
+                }
+            }
+
+            implement is_empty {
+                r := repr(s).end = 0;
             }
         }
-    }
 
-    # Using the Z3 macro finder feature is generally a good idea, but occasionally
-    # it goes crazy. For some reason it does here, so we turn it off.
-    
-    attribute macro_finder = false
+        attribute test = impl
+
+    } with spec, basis
+
+    attribute test = impl
+
+    isolate iso = this with basis
 }
 
-isolate nset = {
-    implement pset.valid {
-        ret := true;
-    }
-} with pset

@@ -5,6 +5,7 @@ include numbers
 include collections
 
 include temporality
+include txn
 include types
 
 module server_rpc(txn_t) = {
@@ -13,15 +14,44 @@ module server_rpc(txn_t) = {
     # tuplespace with exported actions.
 
     class msg_t = {
-        # The operation to take when a server_id receives a particular message.
-        action handle(cid: coord_id, ^msg:msg_t)
+        action handle(cid: node, ^msg:msg_t)
     }
 
     subclass preaccept_msg_t of msg_t = {
-        field src: coord_id
-        field t: txn_t
-        field ts: timestamp
+        field src: node
+        field txn: txn_t
+        field received_at: timestamp
 
-        action handle(self: coord_id, ^msg:preaccept_msg_t)
+        action handle(self: node, ^msg:preaccept_msg_t)
+    }
+
+    subclass preaccept_ok_msg_t of msg_t = {
+        field src: node
+        field cmd: cmd_t
+        field witnessed_at: timestamp
+
+        field deps: vector[cmd_t]
+
+        action handle(self: node, ^msg:preaccept_ok_msg_t)
+    }
+
+    subclass commit_msg_t of msg_t = {
+        field src: node
+        field cmd: cmd_t
+        field execute_at: timestamp
+        
+        field deps: vector[txn_t]
+
+        action handle(self: node, ^msg:commit_msg_t)
+    }
+
+    subclass accept_msg_t of msg_t = {
+        field src: node
+        field cmd: cmd_t
+        field execute_at: timestamp
+
+        field deps: vector[txn_t]
+
+        action handle(self: node, ^msg:accept_msg_t)
     }
 }

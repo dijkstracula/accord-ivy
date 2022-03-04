@@ -11,13 +11,23 @@ global {
     instance sequence : unbounded_sequence
 
     class timestamp = {
+        # TODO: epoch???
         field real : walltime
         field seqid: sequence
-        field host : coord_id
+        field host : node
     }
+
+    function (LHS: timestamp < RHS: timestamp) =
+        LHS.real < RHS.real |
+        LHS.real = RHS.real & LHS.seqid < RHS.seqid | 
+        LHS.real = RHS.real & LHS.seqid = RHS.seqid & LHS.host < RHS.host
+
+    function ts_eq(LHS: timestamp, RHS: timestamp) =
+        LHS.real = RHS.real & LHS.seqid = RHS.seqid & LHS.host = RHS.host
+
 }
 
-module time(cid: coord_id) = {
+module time(self: node) = {
 
     implementation {
         var curr_time   : walltime
@@ -27,21 +37,22 @@ module time(cid: coord_id) = {
             curr_time := 1;
             last_issued.real := 0;
             last_issued.seqid := 0;
-            last_issued.host := cid;
+            last_issued.host := self;
 
             prev_issued := last_issued; #ghost
         }
 
         # Advance time on occasion.
-        export action tick
+        action tick
         implement tick {
             curr_time := curr_time.next;
         }
 
         # Get "the current time".
-        export action now returns (ret : timestamp)
+        #export action now returns (ret : timestamp)
+        action now returns (ret : timestamp)
         implement now {
-            ret.host := cid;
+            ret.host := self;
             
             # The Java implementation appears to not guarantee a monotonic
             # local clock, so this functionality is taken from there.
@@ -56,11 +67,6 @@ module time(cid: coord_id) = {
             last_issued := ret;
         }
 
-        function ts_lt(LHS: timestamp, RHS: timestamp) =
-            LHS.real < RHS.real |
-            LHS.real = RHS.real & LHS.seqid < RHS.seqid | 
-            LHS.real = RHS.real & LHS.seqid = RHS.seqid & LHS.host < RHS.host
-
         #TODO: How to put an upper bound?
         #invariant [ts_lt_nonreflexivity] ts_lt(TS,TS) = false
     } 
@@ -70,7 +76,7 @@ module time(cid: coord_id) = {
         after now {
             # Our clock must always move forward, no matter how coarse the real
             # clock is.
-            ensure ts_lt(prev_issued, last_issued); 
+            ensure prev_issued < last_issued;
         }
     }
 }

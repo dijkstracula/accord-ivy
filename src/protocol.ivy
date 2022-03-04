@@ -1,17 +1,176 @@
 #lang ivy1.8
-
 include messages
+include nodesets
 include temporality
+include txn
 include types
 
-type t
-instance server_rpc(t)
+instance server_rpc(txn_t)
 
-process coordinator(cid: coord_id) = {
-    instance clock : time(cid)
 
-    implement preaccept_msg_t.handle(msg: preaccept_msg_t) {
-        debug "preaccept_msg_t.handle" with msg=msg;
+global {
+    instance nset : indexset(node)
+    instance net : tcp_test.net(msg_t)
+
+    instance node_it : sequence_iterator(node)
+}
+
+process coordinator(self: node) = {
+    # does N have a request in flight?
+    relation req_in_flight(N: node)
+
+    # How many nodes should go into an electorate?
+    # (TODO: maybe we should compute this instead by specifying
+    # how many failures we should support...)
+    var my_electorate : nset
+    var electorate_size : nat
+
+    # PreAccept: What other transactions depend on our current proposal?
+    instance deps : ordered_set(cmd_t)
+
+    # PreAcceptOK: What's the largest timestamp we've seen so far?
+    var maxPreAcceptOK : option[txn_t]
+
+    var slowpath_accepts : nset
+    var fastpath_accepts : nset
+
+    var sb: store_buffer
+
+    var t0: timestamp
+
+    implementation {
+        instance clock : time(self)
+        instance sock : net.socket
+
+        after init {
+            maxPreAcceptOK := option[txn_t].empty;
+            fastpath_accepts := nset.emptyset;
+            slowpath_accepts := nset.emptyset;
+
+            # Why can't this be a CLI argument?
+            electorate_size := 2;
+
+            var i: nat := 0;
+            var curr := self;
+            while i < electorate_size {
+                my_electorate := my_electorate.add(curr);
+                if curr = curr.max {
+                    curr := 0;
+                } else {
+                    curr := curr.next;
+                }
+                i := i.next;
+            }
+        }
+
+        export action read(keys: vector[key]) = {
+            req_in_flight(self) := true; #ghost
+            var now := clock.now();
+
+            var txn : txn_t;
+            txn.kind := read_kind;
+            txn.keys := keys;
+
+            var msg : preaccept_msg_t;
+            msg.src := self;
+            msg.txn := txn;
+            msg.received_at := now;
+
+            electorate_multicast(msg);
+        }
+
+        implement preaccept_msg_t.handle(msg: preaccept_msg_t) {
+            debug "preaccept_msg_t.handle" with msg=msg;
+
+            var ts: timestamp;
+            ts := max_conflict(msg.txn, sb);
+
+            if msg.received_at < ts {
+                # TODO: why do we stomp over host here?
+                ts.seqid := ts.seqid.next;
+                ts.host := self;
+            }
+
+            var deps: vector[cmd_t];
+            deps := dependencies(msg.txn, sb);
+
+            var cmd : cmd_t;
+            cmd.txn := msg.txn;
+
+            var resp : preaccept_ok_msg_t;
+            resp.src := self;
+            resp.cmd := cmd;
+            resp.deps := deps;
+            resp.witnessed_at := ts;
+            unicast(resp, msg.src);
+        }
+
+        implement preaccept_ok_msg_t.handle(msg: preaccept_ok_msg_t) {
+            debug "preaccept_ok_msg_t.handle" with msg=msg;
+
+            for it, d in msg.deps {
+                deps.insert(d);
+            }
+
+            slowpath_accepts := slowpath_accepts.add(msg.src);
+            if ts_eq(msg.witnessed_at, t0) {
+                fastpath_accepts := fastpath_accepts.add(msg.src);
+            }
+
+            if fastpath_accepts.majority(my_electorate) {
+                var resp: commit_msg_t;
+                resp.src := self;
+                resp.cmd := msg.cmd;
+                resp.execute_at := msg.witnessed_at;
+                broadcast(resp);
+            } else if slowpath_accepts.majority(nset.fullset) {
+                var resp: accept_msg_t;
+                resp.src := self;
+                resp.cmd := msg.cmd;
+                #resp.execute_at := msg.witnessed_at;
+                broadcast(resp);
+            }
+        }
+
+        # Network helpers (c/o Ken's HW6 starter)
+
+        implement sock.recv(src:tcp.endpoint, msg:msg_t) {
+            msg.handle(self);
+        }
+
+        action unicast(outgoing : msg_t, dst_id : node) = {
+            debug "send" with server = self, msg = outgoing, dst = dst_id;
+            sock.send(coordinator(dst_id).sock.id,outgoing);
+        }
+
+        # node i broadcasts to nodes [i, i+elmax) % node.max
+        action electorate_multicast(outgoing: msg_t) = {
+            var it := node_it.begin();
+            var e := node_it.end();
+            while it ~= e {
+                # boy I hate this
+                if nset.member(it.value(), my_electorate) {
+                    unicast(outgoing, it.value());
+                }
+                it := it.next();
+            }
+        }
+
+        action broadcast(outgoing: msg_t) = {
+            var it := node_it.begin();
+            var e := node_it.end();
+            while it ~= e {
+                unicast(outgoing, it.value());
+                it := it.next();
+            }
+        }
+    }
+
+    specification {
+        before read {
+            require ~req_in_flight(self);
+            #require keys.end > 0;
+        }
     }
 }
 
