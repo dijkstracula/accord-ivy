@@ -1,5 +1,7 @@
 SRCDIR=src
 TOPLVLSRC=protocol.ivy
+ABSSRC=abstract_protocol.ivy
+
 SRCS=$(SRCDIR)/$(TOPLVLSRC) $(wildcard $(SRCDIR)/*.ivy)
 
 CC=ivyc
@@ -23,8 +25,8 @@ $(SRCDIR)$(EXE): $(SRCS)
 test: build
 	cd $(SRCDIR); $(LCH) $(LCHFLAGS) $(EXE) | sed -e '/{$$/,/}$$/ d'
 
-bmc:
-	cd $(SRCDIR); $(CHK) $(CHKFLAGS) $(TOPLVLSRC)
+proof:
+	cd $(SRCDIR); $(CHK) $(CHKFLAGS) $(ABSSRC)
 
 clean:
 	./scripts/ivy_clean.sh
