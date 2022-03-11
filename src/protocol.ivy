@@ -7,6 +7,7 @@ include types
 
 instance server_rpc(txn_t)
 
+include abstract_protocol
 
 global {
     instance nset : indexset(node)
@@ -34,6 +35,9 @@ process coordinator(self: node) = {
 
     var sb: store_buffer
 
+    # The highest timestamp observed for a given transaction
+    var highest_ts(T: txn_t) : timestamp
+
     instance clock : time(self)
     instance sock : net.socket
 
@@ -47,9 +51,9 @@ process coordinator(self: node) = {
                 slowpath_accepts(self) := nset.emptyset;
 
                 # Why can't this be a CLI argument?
-                electorate_size(self) := 2;
+                electorate_size(self) := 3;
 
-                var i: nat := 0;
+                var i: nat := 1;
                 var curr := self;
                 while i < electorate_size(self) {
                     my_electorate(self) := my_electorate(self).add(curr);
@@ -102,6 +106,8 @@ process coordinator(self: node) = {
                 resp.deps := deps;
                 resp.witnessed_at := ts;
                 unicast(self, resp, msg.src);
+
+                protocol.handle_preaccepted(self, cmd);
             }
 
             implement preaccept_ok_msg_t.handle(self: node, msg: preaccept_ok_msg_t) {
@@ -121,14 +127,23 @@ process coordinator(self: node) = {
                     resp.src := self;
                     resp.cmd := msg.cmd;
                     resp.execute_at := msg.witnessed_at;
-                    broadcast(self, resp);
+                    replica_multicast(self, resp);
                 } else if slowpath_accepts(self).majority(nset.fullset) {
                     var resp: accept_msg_t;
                     resp.src := self;
                     resp.cmd := msg.cmd;
                     #resp.execute_at := msg.witnessed_at;
-                    broadcast(self, resp);
+                    replica_multicast(self, resp);
                 }
+            }
+
+            implement commit_msg_t.handle(self: node, msg: commit_msg_t) {
+                debug "commit_msg_t.handle" with msg=msg;
+            }
+
+            implement accept_msg_t.handle(self: node, msg: accept_msg_t) {
+                debug "accept_msg_t.handle" with msg=msg;
+                assert false;
             }
 
             # Network helpers (c/o Ken's HW6 starter)
@@ -140,6 +155,11 @@ process coordinator(self: node) = {
             action unicast(self: node, outgoing : msg_t, dst_id : node) = {
                 debug "send" with server = self, msg = outgoing, dst = dst_id;
                 sock.send(self, coordinator(dst_id).sock.id,outgoing);
+            }
+
+            # TODO: right now, ignore replication for the moment.
+            action replica_multicast(self: node, outgoing: msg_t) = {
+                unicast(self, outgoing, self);
             }
 
             # node i broadcasts to nodes [i, i+elmax) % node.max
@@ -169,9 +189,13 @@ process coordinator(self: node) = {
             # does N have a request in flight?
             relation req_in_flight(N: node)
 
+            after init {
+                req_in_flight(N) := false;
+            }
+
             before read(self: node, keys: vector[key]) {
+                require keys.end > 0;
                 require ~req_in_flight(self);
-                #require keys.end > 0;
             }
         }
     }

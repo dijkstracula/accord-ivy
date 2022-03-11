@@ -45,6 +45,16 @@ module server_rpc(txn_t) = {
         action handle(self: node, ^msg:commit_msg_t)
     }
 
+    subclass read_msg_t of msg_t = {
+        field src: node
+        field cmd: cmd_t
+        field execute_at: timestamp
+        
+        field deps: vector[txn_t]
+
+        action handle(self: node, ^msg:read_msg_t)
+    }
+
     subclass accept_msg_t of msg_t = {
         field src: node
         field cmd: cmd_t

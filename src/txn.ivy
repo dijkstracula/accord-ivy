@@ -27,7 +27,6 @@ class txn_t = {
             LHS.keys.value(I) < RHS.keys.value(I)))
 }
 
-
 function overlapping_readsets(ks1: vector[key], ks2: vector[key]) : bool =
    exists I1, I2. ks1.begin() < I1 & I1 < ks1.end() 
                 & ks2.begin() < I2 & I2 < ks2.end()
@@ -48,10 +47,14 @@ class cmd_t = {
     field ts: timestamp
 
     field pre_accepted: bool
-    
 
     definition (LHS: cmd_t < RHS: cmd_t) : bool = LHS.ts < RHS.ts
 }
+
+
+function conflicts_with(c1: cmd_t, c2: cmd_t) : bool =
+    (c1.txn.kind = write_kind | c2.txn.kind = write_kind) &
+    overlapping_readsets(c1.txn.keys, c2.txn.keys)
 
 # In the Java implementation, a CommandBuffer is sharded by key.  For simplicity
 # let's be sloppier for now.

@@ -23,7 +23,7 @@ $(SRCDIR)$(EXE): $(SRCS)
 	cd $(SRCDIR); $(CC) $(CFLAGS) $(notdir $<)
 
 test: build
-	cd $(SRCDIR); $(LCH) $(LCHFLAGS) $(EXE) | sed -e '/{$$/,/}$$/ d'
+	cd $(SRCDIR); $(LCH) $(LCHFLAGS) $(EXE) #| sed -e '/{$$/,/}$$/ d'
 
 proof:
 	cd $(SRCDIR); $(CHK) $(CHKFLAGS) $(ABSSRC)
