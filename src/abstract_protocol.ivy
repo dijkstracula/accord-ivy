@@ -1,0 +1,80 @@
+#lang ivy1.8
+
+include collections
+include order
+
+include nodesets
+include temporality
+include txn
+include types
+
+isolate protocol = {
+    specification {
+        relation requested(N: node, T: txn_t)
+        relation preaccepted(N: node, C: cmd_t) 
+        relation executed(N: node, C: cmd_t)
+
+        after init {
+            requested(N,T) := false;
+            preaccepted(N,C) := false;
+            executed(N,C) := false;
+        }
+
+        # B.1. Validity
+
+        # Transaction τ executes and applies at replicas only if it was
+        # submitted by a client.
+        invariant [validity_executed] 
+            forall C: cmd_t. (executed(N1,C) -> exists T. requested(N2, T) & T = C.txn)
+
+        # B.2. Isolation
+
+        # B.2.1. Consistency
+
+        # Theorem B.2.1.1: For any replica P and transaction \tao, P.t0 τ
+        # is that which is assigned by the original coordinator for τ
+        # (True by default in our implemention?)
+
+        # Theorem B.2.1.2: P.t0τ.seq = 0
+        action seqid_is_zero(cmd: cmd_t) = {
+            require cmd.txn.t0.seqid = 0
+        }
+
+        #  B.2.1.3. For any transaction τ, and ballot b belonging to some
+        #  coordinator C, C attempts to commit τ using b for at most one
+        #  distinct tuple.
+        #TODO
+
+        action handle_preaccepted(self: node, cmd: cmd_t) = {
+            debug "protocol.handle_preaccepted" with self=self, cmd=cmd;
+
+            # For any replica P and transaction τ, if PreAccepted(τ) then the
+            # following are true:
+
+            # 1. For any replica P and transaction \tao, P.t0 τ is that which
+            # is assigned by the original coordinator for τ (True by default in
+            # our implemention?)
+
+            # 2. P.t0τ.seq = 0
+            #seqid_is_zero(cmd);
+
+            # 3. P.t0 τ ≤ P.tτ
+            require cmd.txn.t0 = cmd.ts | cmd.txn.t0 < cmd.ts;
+
+            # Observation B.2.1.2. No two transactions are assigned the same t0.
+            #require forall C1: cmd_t, C2: cmd_t . 
+            #    executed(N1,C1) = executed(N2,C2) ->
+            #        (C1.ts = C2.ts -> C1.txn = C2.txn);
+
+            # Observation B.4. For any replica P and conflicting transactions
+            # γ,τ, if PREACCEPTED(P,γ) and PREACCEPTED(P,τ), with γ arriving at
+            # P before τ, then tγ ̸= tτ.
+            require forall GAMMA: cmd_t. 
+                conflicts_with(GAMMA, cmd) 
+                -> (preaccepted(N, GAMMA) 
+                -> ~(GAMMA.ts = cmd.ts));
+
+            preaccepted(self, cmd) := true;
+        }
+    }
+}
