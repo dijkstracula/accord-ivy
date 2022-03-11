@@ -43,6 +43,9 @@ process coordinator(self: node) = {
 
     common {
 
+	var init_electorate(N:node) : nset
+	function ring_succ(N,M) = node.succ(N,M) | N=0 & M=node.max
+    
         implementation {
 
             after init(self: node) {
@@ -51,19 +54,11 @@ process coordinator(self: node) = {
                 slowpath_accepts(self) := nset.emptyset;
 
                 # Why can't this be a CLI argument?
-                electorate_size(self) := 3;
-
-                var i: nat := 1;
-                var curr := self;
-                while i < electorate_size(self) {
-                    my_electorate(self) := my_electorate(self).add(curr);
-                    if curr = curr.max {
-                        curr := 0;
-                    } else {
-                        curr := curr.next;
-                    }
-                    i := i.next;
-                }
+                electorate_size(self) := 2;
+		my_electorate(self) := nset.emptyset;
+		my_electorate(self) := my_electorate(self).add(self);
+#		my_electorate(self) := init_electorate(self);
+		debug "foo" with e = my_electorate(self);
             }
 
             export action read(self: node, keys: vector[key]) = {
