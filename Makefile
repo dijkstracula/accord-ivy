@@ -17,9 +17,9 @@ CHKFLAGS=isolate=this detailed=false
 .PHONY: all build clean test bmc
 all: build test Makefile
 
-build: $(SRCDIR)$(EXE)
+build: $(SRCDIR)/$(EXE)
 
-$(SRCDIR)$(EXE): $(SRCS)
+$(SRCDIR)/$(EXE): $(SRCS)
 	cd $(SRCDIR); $(CC) $(CFLAGS) $(notdir $<)
 
 test: build

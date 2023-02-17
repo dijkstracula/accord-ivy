@@ -36,8 +36,8 @@ isolate protocol = {
         # (True by default in our implemention?)
 
         # Theorem B.2.1.2: P.t0τ.seq = 0
-        action seqid_is_zero(cmd: cmd_t) = {
-            require cmd.txn.t0.seqid = 0
+        action seqid_is_zero(msg: preaccept_msg_t) = {
+            require msg.first_proposed_at.seqid = 0
         }
 
         #  B.2.1.3. For any transaction τ, and ballot b belonging to some
@@ -45,8 +45,8 @@ isolate protocol = {
         #  distinct tuple.
         #TODO
 
-        action handle_preaccepted(self: node, cmd: cmd_t) = {
-            debug "protocol.handle_preaccepted" with self=self, cmd=cmd;
+        action handle_preaccepted(self: node, msg: preaccept_msg_t, resp: preaccept_reply_msg_t) = {
+            debug "protocol.handle_preaccepted" with self=self, msg=msg, resp=resp;
 
             # For any replica P and transaction τ, if PreAccepted(τ) then the
             # following are true:
@@ -56,10 +56,11 @@ isolate protocol = {
             # our implemention?)
 
             # 2. P.t0τ.seq = 0
-            #seqid_is_zero(cmd);
+            seqid_is_zero(msg);
 
             # 3. P.t0 τ ≤ P.tτ
-            require cmd.txn.t0 = cmd.ts | cmd.txn.t0 < cmd.ts;
+            require msg.first_proposed_at = resp.first_proposed_at;
+            require resp.first_proposed_at <= resp.witnessed_at;
 
             # Observation B.2.1.2. No two transactions are assigned the same t0.
             #require forall C1: cmd_t, C2: cmd_t . 
@@ -70,11 +71,11 @@ isolate protocol = {
             # γ,τ, if PREACCEPTED(P,γ) and PREACCEPTED(P,τ), with γ arriving at
             # P before τ, then tγ ̸= tτ.
             require forall GAMMA: cmd_t. 
-                conflicts_with(GAMMA, cmd) 
+                conflicts_with(GAMMA, resp.cmd) 
                 -> (preaccepted(N, GAMMA) 
-                -> ~(GAMMA.ts = cmd.ts));
+                -> ~(GAMMA.ts = resp.cmd.ts));
 
-            preaccepted(self, cmd) := true;
+            preaccepted(self, resp.cmd) := true;
         }
     }
 }

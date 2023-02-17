@@ -18,8 +18,6 @@ class txn_t = {
     field keys: vector[key]
     field vals: option[vector[value]]
 
-    field t0: timestamp
-
     definition (LHS: txn_t < RHS: txn_t) : bool = 
         (exists I. 0 <= I & I < index.max2(LHS.keys.end(), RHS.keys.end()) &
         (forall J. 0 <= J & J < I ->
@@ -27,9 +25,9 @@ class txn_t = {
             LHS.keys.value(I) < RHS.keys.value(I)))
 }
 
-function overlapping_readsets(ks1: vector[key], ks2: vector[key]) : bool =
-   exists I1, I2. ks1.begin() < I1 & I1 < ks1.end() 
-                & ks2.begin() < I2 & I2 < ks2.end()
+function overlapping_keyvecs(ks1: vector[key], ks2: vector[key]) : bool =
+   exists I1, I2. ks1.begin() <= I1 & I1 < ks1.end() 
+                & ks2.begin() <= I2 & I2 < ks2.end()
                 & ks1.value(I1) = ks2.value(I2)
 
 
@@ -37,6 +35,11 @@ function overlapping_readsets(ks1: vector[key], ks2: vector[key]) : bool =
 # Nodes will also need to keep track of commands that they know about yet but
 # can't execute the command until time passes (as there may be a concurrent
 # transaction yet to arrive).
+# TODO: I think this is just a transaction: the txn_id encodes the logical time
+# so I don't know what we get out of separating these out.  Seems like we should
+# simply call a spade a spade?
+# TODO: This could also be a _sequence_ of individual actions, which more closely
+# matches the behaviour of the Maelstrom tester.
 class cmd_t = {
     alias t = this
 
@@ -54,32 +57,47 @@ class cmd_t = {
 
 function conflicts_with(c1: cmd_t, c2: cmd_t) : bool =
     (c1.txn.kind = write_kind | c2.txn.kind = write_kind) &
-    overlapping_readsets(c1.txn.keys, c2.txn.keys)
+    overlapping_keyvecs(c1.txn.keys, c2.txn.keys)
 
 # In the Java implementation, a CommandBuffer is sharded by key.  For simplicity
 # let's be sloppier for now.
 alias store_buffer = vector[cmd_t]
 
-action max_conflict(txn: txn_t, sb: store_buffer) returns (ret: timestamp) = {
+action filter_timestamps_lt(cmds: vector[cmd_t], ts: timestamp) returns (ret: vector[cmd_t]) = {
+    var it := cmds.begin();
+    var e := cmds.end();
+    while it ~= e {
+        var cur := cmds.value(it);
+
+        if cur.ts < ts {
+            ret := ret.append(cur);
+        }
+
+        it := it.next();
+    }
+}
+
+action max_timestamp(cmds: vector[cmd_t]) returns (ret: timestamp) = {
     var opt_ret: option[timestamp];
     opt_ret := option[timestamp].empty;
 
-    var it := sb.begin();
-    var e := sb.end();
+    var it := cmds.begin();
+    var e := cmds.end();
     while it ~= e {
-        var cur := sb.value(it);
+        var cur := cmds.value(it);
 
         # TODO: if both cmds are reads, not a conflict?
-        if overlapping_readsets(txn.keys, cur.txn.keys) {
-            if opt_ret.is_empty | opt_ret.contents() < cur.txn.t0 {
-                opt_ret := option[timestamp].just(cur.txn.t0);
-            }
-
-            it := it.next();
+        if opt_ret.is_empty | opt_ret.contents() < cur.ts {
+            opt_ret := option[timestamp].just(cur.ts);
         }
+
+        it := it.next();
     }
 
     if opt_ret.is_empty {
+        # TODO: I guess I'm doing this to return the "minimal" timestamp.  Is
+        # there a way to do this in a more principled way?  (Or should I just
+        # return an option?)
         ret.real := 0;
         ret.seqid := 0;
         ret.host := 0;
@@ -94,7 +112,9 @@ action dependencies(txn: txn_t, sb: store_buffer) returns (deps: vector[cmd_t]) 
     while it ~= e {
         var gamma : cmd_t := sb.value(it);
 
-        if overlapping_readsets(txn.keys, gamma.txn.keys) & gamma.txn.t0 < txn.t0 {
+        # TODO: This feels overspecified?  Overlapping readsets are, I think,
+        # sufficient, but not necessary for txn and gamma.txn to conflict.
+        if overlapping_keyvecs(txn.keys, gamma.txn.keys) {
             deps := deps.append(gamma); 
             it := it.next();
         }

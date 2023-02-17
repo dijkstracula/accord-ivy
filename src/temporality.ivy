@@ -50,19 +50,16 @@ module time(self: node) = {
 
         # Get "the current time".
         #export action now returns (ret : timestamp)
+        # TODO: should we only return our "monotonic local clock"?
         action now returns (ret : timestamp)
         implement now {
             ret.host := self;
-            
-            # The Java implementation appears to not guarantee a monotonic
-            # local clock, so this functionality is taken from there.
-            if curr_time > last_issued.real {
-                ret.real := curr_time;
-                ret.seqid := 0;
-            } else {
-                ret.real := last_issued.real;
-                ret.seqid := last_issued.seqid.next;
-            }
+           
+            tick();
+
+            ret.real := curr_time;
+            ret.seqid := 0;
+
             prev_issued := last_issued; #ghost
             last_issued := ret;
         }

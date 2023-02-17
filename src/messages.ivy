@@ -9,10 +9,6 @@ include txn
 include types
 
 module server_rpc(txn_t) = {
-    # All server messages are internal to the tuplespace implementation;
-    # clients do not directly send these messages but simply "call into" the
-    # tuplespace with exported actions.
-
     class msg_t = {
         action handle(cid: node, ^msg:msg_t)
     }
@@ -20,19 +16,23 @@ module server_rpc(txn_t) = {
     subclass preaccept_msg_t of msg_t = {
         field src: node
         field txn: txn_t
-        field received_at: timestamp
+        field first_proposed_at: timestamp # In the paper, t0
 
         action handle(self: node, ^msg:preaccept_msg_t)
     }
 
-    subclass preaccept_ok_msg_t of msg_t = {
+    subclass preaccept_reply_msg_t of msg_t = {
+        field ok: bool #TODO: when should we get NACKs?
+
         field src: node
         field cmd: cmd_t
+
+        field first_proposed_at: timestamp # In the paper, t0
         field witnessed_at: timestamp
 
         field deps: vector[cmd_t]
 
-        action handle(self: node, ^msg:preaccept_ok_msg_t)
+        action handle(self: node, ^msg:preaccept_reply_msg_t)
     }
 
     subclass commit_msg_t of msg_t = {
@@ -41,27 +41,17 @@ module server_rpc(txn_t) = {
         field execute_at: timestamp
         
         field deps: vector[txn_t]
-
+    
         action handle(self: node, ^msg:commit_msg_t)
-    }
-
-    subclass read_msg_t of msg_t = {
-        field src: node
-        field cmd: cmd_t
-        field execute_at: timestamp
-        
-        field deps: vector[txn_t]
-
-        action handle(self: node, ^msg:read_msg_t)
     }
 
     subclass accept_msg_t of msg_t = {
         field src: node
         field cmd: cmd_t
         field execute_at: timestamp
-
+    
         field deps: vector[txn_t]
-
+    
         action handle(self: node, ^msg:accept_msg_t)
     }
 }

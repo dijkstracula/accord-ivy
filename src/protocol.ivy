@@ -16,27 +16,27 @@ global {
     instance node_it : sequence_iterator(node)
 }
 
+# TODO: The process should be a Node, node should be a node_id,
+# and the coordinator should be an isolate that simply handles
+# phase 1 of the protocol and is composed/mixed into the Node.
 process coordinator(self: node) = {
 
     # How many nodes should go into an electorate?
-    # (TODO: maybe we should compute this instead by specifying
-    # how many failures we should support...)
+    # (TODO: maybe we should compute this instead by specifying how many
+    # failures we should support...)
     var my_electorate : nset
     var electorate_size : nat
 
-    # PreAccept: What other transactions depend on our current proposal?
+    # What other transactions depend on our current proposal?
+    # This is accumulated from PreAccept and Accept responses.
     instance deps : ordered_set(cmd_t)
-
-    # PreAcceptOK: What's the largest timestamp we've seen so far?
-    var maxPreAcceptOK : option[txn_t]
 
     var slowpath_accepts : nset
     var fastpath_accepts : nset
 
+    # Committed transactions that have not yet executed (?)
+    # TODO: is this actually correct
     var sb: store_buffer
-
-    # The highest timestamp observed for a given transaction
-    var highest_ts(T: txn_t) : timestamp
 
     instance clock : time(self)
     instance sock : net.socket
@@ -46,7 +46,6 @@ process coordinator(self: node) = {
         implementation {
 
             after init(self: node) {
-                maxPreAcceptOK(self) := option[txn_t].empty;
                 fastpath_accepts(self) := nset.emptyset;
                 slowpath_accepts(self) := nset.emptyset;
 
@@ -76,64 +75,75 @@ process coordinator(self: node) = {
                 var msg : preaccept_msg_t;
                 msg.src := self;
                 msg.txn := txn;
-                msg.received_at := now;
+                msg.first_proposed_at := now;
 
                 electorate_multicast(self, msg);
                 req_in_flight(self) := true; #ghost
             }
 
+            #####################################################
+
             implement preaccept_msg_t.handle(self: node, msg: preaccept_msg_t) {
                 debug "preaccept_msg_t.handle" with msg=msg;
 
-                var ts: timestamp;
-                ts := max_conflict(msg.txn, sb(self));
-
-                if msg.received_at < ts {
-                    # TODO: why do we stomp over host here?
-                    ts.seqid := ts.seqid.next;
-                    ts.host := self;
-                }
-
+    
                 var deps: vector[cmd_t];
                 deps := dependencies(msg.txn, sb(self));
 
+                var mc: timestamp;
+                var proposed_exec_ts: timestamp;
+                mc := max_timestamp(deps);
+                if msg.first_proposed_at > mc {
+                    proposed_exec_ts := msg.first_proposed_at; 
+                } else {
+                    proposed_exec_ts.real   := mc.real;
+                    proposed_exec_ts.seqid := mc.seqid.next();
+                    proposed_exec_ts.host   := self;
+                }
+
                 var cmd : cmd_t;
                 cmd.txn := msg.txn;
+                cmd.ts := proposed_exec_ts;
 
-                var resp : preaccept_ok_msg_t;
+                var resp : preaccept_reply_msg_t;
+                resp.ok := true; #TODO
                 resp.src := self;
                 resp.cmd := cmd;
-                resp.deps := deps;
-                resp.witnessed_at := ts;
+                resp.deps := filter_timestamps_lt(deps, msg.first_proposed_at);
+                resp.first_proposed_at := msg.first_proposed_at;
+                resp.witnessed_at := proposed_exec_ts;
                 unicast(self, resp, msg.src);
 
-                protocol.handle_preaccepted(self, cmd);
+                protocol.handle_preaccepted(self, msg, resp);
             }
 
-            implement preaccept_ok_msg_t.handle(self: node, msg: preaccept_ok_msg_t) {
-                debug "preaccept_ok_msg_t.handle" with msg=msg;
+            implement preaccept_reply_msg_t.handle(self: node, msg: preaccept_reply_msg_t) {
+                debug "preaccept_reply_msg_t.handle" with msg=msg;
 
-                for it, d in msg.deps {
-                    deps(self).insert(d);
-                }
+                if msg.ok {
+                    # Merge all dependencies
+                    for it, d in msg.deps {
+                        deps(self).insert(d);
+                    }
 
-                slowpath_accepts(self) := slowpath_accepts(self).add(msg.src);
-                if msg.witnessed_at = msg.cmd.txn.t0 {
-                    fastpath_accepts(self) := fastpath_accepts(self).add(msg.src);
-                }
+                    slowpath_accepts(self) := slowpath_accepts(self).add(msg.src);
+                    if msg.witnessed_at = msg.first_proposed_at {
+                        fastpath_accepts(self) := fastpath_accepts(self).add(msg.src);
+                    }
 
-                if fastpath_accepts(self).majority(my_electorate(self)) {
-                    var resp: commit_msg_t;
-                    resp.src := self;
-                    resp.cmd := msg.cmd;
-                    resp.execute_at := msg.witnessed_at;
-                    replica_multicast(self, resp);
-                } else if slowpath_accepts(self).majority(nset.fullset) {
-                    var resp: accept_msg_t;
-                    resp.src := self;
-                    resp.cmd := msg.cmd;
-                    #resp.execute_at := msg.witnessed_at;
-                    replica_multicast(self, resp);
+                    if fastpath_accepts(self).majority(my_electorate(self)) {
+                        var resp: commit_msg_t;
+                        resp.src := self;
+                        resp.cmd := msg.cmd;
+                        resp.execute_at := msg.first_proposed_at;
+                        replica_multicast(self, resp);
+                    } else if slowpath_accepts(self).majority(nset.fullset) {
+                        var resp: accept_msg_t;
+                        resp.src := self;
+                        resp.cmd := msg.cmd;
+                        #resp.execute_at := msg.witnessed_at;
+                        replica_multicast(self, resp);
+                    }
                 }
             }
 
@@ -194,8 +204,10 @@ process coordinator(self: node) = {
             }
 
             before read(self: node, keys: vector[key]) {
-                require keys.end > 0;
-                require ~req_in_flight(self);
+                # TODO: how do I make the environment enforce that they give
+                # me a non-empty keyset?  I've done this before with a
+                # precondition, I thought...
+                #                require keys.end > 0;
             }
         }
     }
