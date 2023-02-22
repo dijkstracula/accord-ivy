@@ -1,0 +1,6 @@
+src/protocol
+*.cpp
+*.h
+*.dSYM/
+*.dsc
+tags
