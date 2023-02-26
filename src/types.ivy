@@ -2,7 +2,7 @@
 include collections
 include order
 
-instance node : iterable
+instance node_id : iterable
 
 # Not actually a node, but a value on [0, node.max)
 # that bounds the size of an electorate.

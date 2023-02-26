@@ -10,9 +10,9 @@ include types
 
 isolate protocol = {
     specification {
-        relation requested(N: node, T: txn_t)
-        relation preaccepted(N: node, C: cmd_t) 
-        relation executed(N: node, C: cmd_t)
+        relation requested(N: node_id, T: txn_t)
+        relation preaccepted(N: node_id, C: cmd_t) 
+        relation executed(N: node_id, C: cmd_t)
 
         after init {
             requested(N,T) := false;
@@ -45,7 +45,7 @@ isolate protocol = {
         #  distinct tuple.
         #TODO
 
-        action handle_preaccepted(self: node, msg: preaccept_msg_t, resp: preaccept_reply_msg_t) = {
+        action handle_preaccepted(self: node_id, msg: preaccept_msg_t, resp: preaccept_reply_msg_t) = {
             debug "protocol.handle_preaccepted" with self=self, msg=msg, resp=resp;
 
             # For any replica P and transaction τ, if PreAccepted(τ) then the

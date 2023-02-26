@@ -10,16 +10,16 @@ instance server_rpc(txn_t)
 include abstract_protocol
 
 global {
-    instance nset : indexset(node)
+    instance nset : indexset(node_id)
     instance net : tcp.net(msg_t)
 
-    instance node_it : sequence_iterator(node)
+    instance node_it : sequence_iterator(node_id)
 }
 
 # TODO: The process should be a Node, node should be a node_id,
 # and the coordinator should be an isolate that simply handles
 # phase 1 of the protocol and is composed/mixed into the Node.
-process coordinator(self: node) = {
+process coordinator(self: node_id) = {
 
     # How many nodes should go into an electorate?
     # (TODO: maybe we should compute this instead by specifying how many
@@ -45,7 +45,7 @@ process coordinator(self: node) = {
 
         implementation {
 
-            after init(self: node) {
+            after init(self: node_id) {
                 fastpath_accepts(self) := nset.emptyset;
                 slowpath_accepts(self) := nset.emptyset;
 
@@ -65,7 +65,7 @@ process coordinator(self: node) = {
                 }
             }
 
-            export action read(self: node, keys: vector[key]) = {
+            export action read(self: node_id, keys: vector[key]) = {
                 var now := clock(self).now();
 
                 var txn : txn_t;
@@ -83,7 +83,7 @@ process coordinator(self: node) = {
 
             #####################################################
 
-            implement preaccept_msg_t.handle(self: node, msg: preaccept_msg_t) {
+            implement preaccept_msg_t.handle(self: node_id, msg: preaccept_msg_t) {
                 debug "preaccept_msg_t.handle" with msg=msg;
 
     
@@ -116,7 +116,7 @@ process coordinator(self: node) = {
                 protocol.handle_preaccepted(self, msg, resp);
             }
 
-            implement preaccept_reply_msg_t.handle(self: node, msg: preaccept_reply_msg_t) {
+            implement preaccept_reply_msg_t.handle(self: node_id, msg: preaccept_reply_msg_t) {
                 debug "preaccept_reply_msg_t.handle" with msg=msg;
 
                 if msg.ok {
@@ -146,33 +146,33 @@ process coordinator(self: node) = {
                 }
             }
 
-            implement commit_msg_t.handle(self: node, msg: commit_msg_t) {
+            implement commit_msg_t.handle(self: node_id, msg: commit_msg_t) {
                 debug "commit_msg_t.handle" with msg=msg;
             }
 
-            implement accept_msg_t.handle(self: node, msg: accept_msg_t) {
+            implement accept_msg_t.handle(self: node_id, msg: accept_msg_t) {
                 debug "accept_msg_t.handle" with msg=msg;
                 assert false;
             }
 
             # Network helpers (c/o Ken's HW6 starter)
 
-            implement sock.recv(self: node, src:tcp.endpoint, msg:msg_t) {
+            implement sock.recv(self: node_id, src:tcp.endpoint, msg:msg_t) {
                 msg.handle(self);
             }
 
-            action unicast(self: node, outgoing : msg_t, dst_id : node) = {
+            action unicast(self: node_id, outgoing : msg_t, dst_id : node_id) = {
                 debug "send" with server = self, msg = outgoing, dst = dst_id;
                 sock.send(self, coordinator(dst_id).sock.id,outgoing);
             }
 
             # TODO: right now, ignore replication for the moment.
-            action replica_multicast(self: node, outgoing: msg_t) = {
+            action replica_multicast(self: node_id, outgoing: msg_t) = {
                 unicast(self, outgoing, self);
             }
 
             # node i broadcasts to nodes [i, i+elmax) % node.max
-            action electorate_multicast(self: node, outgoing: msg_t) = {
+            action electorate_multicast(self: node_id, outgoing: msg_t) = {
                 var it := node_it.begin();
                 var e := node_it.end();
                 while it ~= e {
@@ -184,7 +184,7 @@ process coordinator(self: node) = {
                 }
             }
 
-            action broadcast(self: node, outgoing: msg_t) = {
+            action broadcast(self: node_id, outgoing: msg_t) = {
                 var it := node_it.begin();
                 var e := node_it.end();
                 while it ~= e {
@@ -196,13 +196,13 @@ process coordinator(self: node) = {
 
         specification {
             # does N have a request in flight?
-            relation req_in_flight(N: node)
+            relation req_in_flight(N: node_id)
 
             after init {
                 req_in_flight(N) := false;
             }
 
-            before read(self: node, keys: vector[key]) {
+            before read(self: node_id, keys: vector[key]) {
                 # TODO: how do I make the environment enforce that they give
                 # me a non-empty keyset?  I've done this before with a
                 # precondition, I thought...
