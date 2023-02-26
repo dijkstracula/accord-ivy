@@ -98,7 +98,6 @@ process coordinator(self: node) = {
                 } else {
                     proposed_exec_ts.real   := mc.real;
                     proposed_exec_ts.seqid := mc.seqid.next();
-                    proposed_exec_ts.host   := self;
                 }
 
                 var cmd : cmd_t;

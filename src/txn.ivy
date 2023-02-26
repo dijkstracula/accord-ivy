@@ -100,7 +100,6 @@ action max_timestamp(cmds: vector[cmd_t]) returns (ret: timestamp) = {
         # return an option?)
         ret.real := 0;
         ret.seqid := 0;
-        ret.host := 0;
     } else {
         ret := opt_ret.contents();
     }
