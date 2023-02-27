@@ -16,9 +16,8 @@ global {
     instance node_it : sequence_iterator(node_id)
 }
 
-# TODO: The process should be a Node, node should be a node_id,
-# and the coordinator should be an isolate that simply handles
-# phase 1 of the protocol and is composed/mixed into the Node.
+# TODO: the coordinator should be an isolate that simply handles phase 1 of the
+# protocol and is composed/mixed into the Node.  (Or perhaps not?)
 process coordinator(self: node_id) = {
 
     # How many nodes should go into an electorate?
@@ -29,7 +28,7 @@ process coordinator(self: node_id) = {
 
     # What other transactions depend on our current proposal?
     # This is accumulated from PreAccept and Accept responses.
-    instance deps : ordered_set(cmd_t)
+    instance deps : ordered_set(txn_t)
 
     var slowpath_accepts : nset
     var fastpath_accepts : nset
@@ -65,12 +64,26 @@ process coordinator(self: node_id) = {
                 }
             }
 
-            export action read(self: node_id, keys: vector[key]) = {
+            # TODO: how can I create a well-formed multi-key txn
+            # involving both reads and writes???
+            export action invoke(self: node_id, reads: vector[key]) = {
                 var now := clock(self).now();
 
+                var qs : vector[query_t];
+
+                var i: index := 0;
+                while i < reads.end() {
+                    var q: query_t;
+                    q.kind := read_kind;
+                    q.k := reads.get(i);
+                    q.v := option[value].empty;
+                    qs := qs.append(q);
+
+                    i := i + 1;
+                }
                 var txn : txn_t;
-                txn.kind := read_kind;
-                txn.keys := keys;
+                txn.ts := now;
+                txn.queries := qs;
 
                 var msg : preaccept_msg_t;
                 msg.src := self;
@@ -87,7 +100,7 @@ process coordinator(self: node_id) = {
                 debug "preaccept_msg_t.handle" with msg=msg;
 
     
-                var deps: vector[cmd_t];
+                var deps: vector[txn_t];
                 deps := dependencies(msg.txn, sb(self));
 
                 var mc: timestamp;
@@ -100,14 +113,11 @@ process coordinator(self: node_id) = {
                     proposed_exec_ts.seqid := mc.seqid.next();
                 }
 
-                var cmd : cmd_t;
-                cmd.txn := msg.txn;
-                cmd.ts := proposed_exec_ts;
-
                 var resp : preaccept_reply_msg_t;
                 resp.ok := true; #TODO
                 resp.src := self;
-                resp.cmd := cmd;
+                resp.txn := msg.txn;
+                resp.txn.ts := proposed_exec_ts;
                 resp.deps := filter_timestamps_lt(deps, msg.first_proposed_at);
                 resp.first_proposed_at := msg.first_proposed_at;
                 resp.witnessed_at := proposed_exec_ts;
@@ -133,13 +143,13 @@ process coordinator(self: node_id) = {
                     if fastpath_accepts(self).majority(my_electorate(self)) {
                         var resp: commit_msg_t;
                         resp.src := self;
-                        resp.cmd := msg.cmd;
+                        resp.txn := msg.txn;
                         resp.execute_at := msg.first_proposed_at;
                         replica_multicast(self, resp);
                     } else if slowpath_accepts(self).majority(nset.fullset) {
                         var resp: accept_msg_t;
                         resp.src := self;
-                        resp.cmd := msg.cmd;
+                        resp.txn := msg.txn;
                         #resp.execute_at := msg.witnessed_at;
                         replica_multicast(self, resp);
                     }
@@ -202,12 +212,12 @@ process coordinator(self: node_id) = {
                 req_in_flight(N) := false;
             }
 
-            before read(self: node_id, keys: vector[key]) {
+            #before read(self: node_id, keys: vector[key]) {
                 # TODO: how do I make the environment enforce that they give
                 # me a non-empty keyset?  I've done this before with a
                 # precondition, I thought...
                 #                require keys.end > 0;
-            }
+                #}
         }
     }
 }

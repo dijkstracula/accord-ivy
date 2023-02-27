@@ -11,13 +11,13 @@ include types
 isolate protocol = {
     specification {
         relation requested(N: node_id, T: txn_t)
-        relation preaccepted(N: node_id, C: cmd_t) 
-        relation executed(N: node_id, C: cmd_t)
+        relation preaccepted(N: node_id, T: txn_t) 
+        relation executed(N: node_id, T: txn_t)
 
         after init {
             requested(N,T) := false;
-            preaccepted(N,C) := false;
-            executed(N,C) := false;
+            preaccepted(N,T) := false;
+            executed(N,T) := false;
         }
 
         # B.1. Validity
@@ -25,7 +25,7 @@ isolate protocol = {
         # Transaction τ executes and applies at replicas only if it was
         # submitted by a client.
         invariant [validity_executed] 
-            forall C: cmd_t. (executed(N1,C) -> exists T. requested(N2, T) & T = C.txn)
+            forall T: txn_t. executed(N1,T) -> requested(N2, T)
 
         # B.2. Isolation
 
@@ -70,12 +70,11 @@ isolate protocol = {
             # Observation B.4. For any replica P and conflicting transactions
             # γ,τ, if PREACCEPTED(P,γ) and PREACCEPTED(P,τ), with γ arriving at
             # P before τ, then tγ ̸= tτ.
-            require forall GAMMA: cmd_t. 
-                conflicts_with(GAMMA, resp.cmd) 
-                -> (preaccepted(N, GAMMA) 
-                -> ~(GAMMA.ts = resp.cmd.ts));
+            require forall GAMMA: txn_t.
+                (preaccepted(P, GAMMA) & conflicts_with(GAMMA, resp.txn))
+                    -> ~(GAMMA.ts = resp.txn.ts);
 
-            preaccepted(self, resp.cmd) := true;
+            preaccepted(self, resp.txn) := true;
         }
     }
 }

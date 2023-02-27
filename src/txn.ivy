@@ -8,66 +8,53 @@ include types
 type key
 type value
 
+class query_t = {
+    field kind: txn_kind_t
+    field k: key
+    field v: option[value]
+}
+
+# A txn_t is a particular transation to be executed at a given logical time.
+# Nodes will also need to keep track of commands that they know about yet but
+# can't execute the command until time passes (as there may be a concurrent
+# transaction yet to arrive).
 class txn_t = {
     alias t = this
 
     instance iter : order_iterator(this)
     isolate iso_iter = iter with this
 
-    field kind: txn_kind_t
-    field keys: vector[key]
-    field vals: option[vector[value]]
+    field ts: timestamp
+    field queries: vector[query_t]
 
-    definition (LHS: txn_t < RHS: txn_t) : bool = 
-        (exists I. 0 <= I & I < index.max2(LHS.keys.end(), RHS.keys.end()) &
-        (forall J. 0 <= J & J < I ->
-            LHS.keys.value(J) = RHS.keys.value(J) &
-            LHS.keys.value(I) < RHS.keys.value(I)))
+    #definition (LHS: txn_t < RHS: txn_t) : bool = 
+    #    (exists I. 0 <= I & I < index.max2(LHS.queries.end(), RHS.queries.end()) &
+    #    (forall J. 0 <= J & J < I ->
+    #        LHS.queries.value(J) = RHS.queries.value(J) &
+    #        LHS.queries.value(I) < RHS.queries.value(I)))
+    
+    definition (LHS: txn_t < RHS: txn_t) : bool = LHS.ts < RHS.ts
 }
 
-function overlapping_keyvecs(ks1: vector[key], ks2: vector[key]) : bool =
+function interfering_queries(ks1: vector[query_t], ks2: vector[query_t]) : bool =
    exists I1, I2. ks1.begin() <= I1 & I1 < ks1.end() 
                 & ks2.begin() <= I2 & I2 < ks2.end()
-                & ks1.value(I1) = ks2.value(I2)
+                & (ks1.value(I1).kind = write_kind | ks2.value(I2).kind = write_kind)
+                & ks1.value(I1).k = ks2.value(I2).k
 
 
-# A command is a particular transation to be executed at a given logical time.
-# Nodes will also need to keep track of commands that they know about yet but
-# can't execute the command until time passes (as there may be a concurrent
-# transaction yet to arrive).
-# TODO: I think this is just a transaction: the txn_id encodes the logical time
-# so I don't know what we get out of separating these out.  Seems like we should
-# simply call a spade a spade?
-# TODO: This could also be a _sequence_ of individual actions, which more closely
-# matches the behaviour of the Maelstrom tester.
-class cmd_t = {
-    alias t = this
-
-    instance iter : order_iterator(this)
-    isolate iso_iter = iter with this
-    # TODO: transaction id??
-    field txn: txn_t
-    field ts: timestamp
-
-    field pre_accepted: bool
-
-    definition (LHS: cmd_t < RHS: cmd_t) : bool = LHS.ts < RHS.ts
-}
-
-
-function conflicts_with(c1: cmd_t, c2: cmd_t) : bool =
-    (c1.txn.kind = write_kind | c2.txn.kind = write_kind) &
-    overlapping_keyvecs(c1.txn.keys, c2.txn.keys)
+function conflicts_with(t1: txn_t, t2: txn_t) : bool =
+    interfering_queries(t1.queries, t2.queries)
 
 # In the Java implementation, a CommandBuffer is sharded by key.  For simplicity
 # let's be sloppier for now.
-alias store_buffer = vector[cmd_t]
+alias store_buffer = vector[txn_t]
 
-action filter_timestamps_lt(cmds: vector[cmd_t], ts: timestamp) returns (ret: vector[cmd_t]) = {
-    var it := cmds.begin();
-    var e := cmds.end();
+action filter_timestamps_lt(txns: vector[txn_t], ts: timestamp) returns (ret: vector[txn_t]) = {
+    var it := txns.begin();
+    var e := txns.end();
     while it ~= e {
-        var cur := cmds.value(it);
+        var cur := txns.value(it);
 
         if cur.ts < ts {
             ret := ret.append(cur);
@@ -77,14 +64,14 @@ action filter_timestamps_lt(cmds: vector[cmd_t], ts: timestamp) returns (ret: ve
     }
 }
 
-action max_timestamp(cmds: vector[cmd_t]) returns (ret: timestamp) = {
+action max_timestamp(txns: vector[txn_t]) returns (ret: timestamp) = {
     var opt_ret: option[timestamp];
     opt_ret := option[timestamp].empty;
 
-    var it := cmds.begin();
-    var e := cmds.end();
+    var it := txns.begin();
+    var e := txns.end();
     while it ~= e {
-        var cur := cmds.value(it);
+        var cur := txns.value(it);
 
         # TODO: if both cmds are reads, not a conflict?
         if opt_ret.is_empty | opt_ret.contents() < cur.ts {
@@ -105,15 +92,15 @@ action max_timestamp(cmds: vector[cmd_t]) returns (ret: timestamp) = {
     }
 }
 
-action dependencies(txn: txn_t, sb: store_buffer) returns (deps: vector[cmd_t]) = {
+action dependencies(t: txn_t, sb: store_buffer) returns (deps: vector[txn_t]) = {
     var it := sb.begin();
     var e := sb.end();
     while it ~= e {
-        var gamma : cmd_t := sb.value(it);
+        var gamma : txn_t := sb.value(it);
 
         # TODO: This feels overspecified?  Overlapping readsets are, I think,
         # sufficient, but not necessary for txn and gamma.txn to conflict.
-        if overlapping_keyvecs(txn.keys, gamma.txn.keys) {
+        if interfering_queries(t.queries, gamma.queries) {
             deps := deps.append(gamma); 
             it := it.next();
         }
