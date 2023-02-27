@@ -25,20 +25,29 @@ global {
         LHS.seqid = RHS.seqid
     
     function ts_lt(LHS: timestamp, RHS: timestamp) = LHS < RHS
+
+    action next(self: timestamp) returns (ret: timestamp) = {
+        ret.real  := self.real;
+        ret.seqid := self.seqid.next();
+    }
 }
 
 module time(self: node) = {
 
     implementation {
-        var curr_time   : walltime
-        var last_issued : timestamp
+        # Our implementation of gettimeofday()
+        var curr_time       : walltime
+
+        # The latest timestamp we have either computed locally or
+        # been sent by another node.
+        var latest_observed : timestamp
 
         after init {
             curr_time := 1;
-            last_issued.real := 0;
-            last_issued.seqid := 0;
+            latest_observed.real := 0;
+            latest_observed.seqid := 0;
 
-            prev_issued := last_issued; #ghost
+            prev_issued := latest_observed; #ghost
         }
 
         # Advance time on occasion.
@@ -48,41 +57,43 @@ module time(self: node) = {
         }
 
         # Get "the current time".
-        #export action now returns (ret : timestamp)
-        action now returns (ret : timestamp)
+        action now returns (ret: timestamp)
         implement now {
             #TODO: I suspect we probably do not want to actually tick 
             #on every now() call, to ensure we sometimes get nonzero
-            #seq ids.
+            #seq ids (which is required for Theorem B.2.1.2).
             tick();
 
             #TODO: We need a mechanism to mutate curr_time when we 
             #receive a timestamp from the outside world.  Else, we will
             #never see the walltime go backwards.
 
-            if last_issued.real >= curr_time {
-                ret.real := last_issued.real;
-                ret.seqid := last_issued.seqid.next;
+            if latest_observed.real >= curr_time {
+                ret.real := latest_observed.real;
+                ret.seqid := latest_observed.seqid.next;
             } else {
                 ret.real := curr_time;
                 ret.seqid := 0;
             }
 
-            prev_issued := last_issued; #ghost
-            last_issued := ret;
+            prev_issued := latest_observed; #ghost
+            latest_observed := ret;
         }
 
-        #TODO: How to put an upper bound?
-        #invariant [ts_lt_nonreflexivity] ts_lt(TS,TS) = false
+        action merge(remote_ts: timestamp)
+        implement merge {
+            if latest_observed < remote_ts {
+                latest_observed := remote_ts;
+            }
+        }
     } 
+
+    # Our clock must always move forward, no matter how coarse the real clock
+    # is.
+    invariant [clock_monotonicity] prev_issued <= latest_observed
 
     specification {
         var prev_issued : timestamp
-        after now {
-            # Our clock must always move forward, no matter how coarse the real
-            # clock is.
-            ensure prev_issued < last_issued;
-        }
     }
 }
 
