@@ -66,7 +66,7 @@ process coordinator(self: node_id) = {
 
             # TODO: how can I create a well-formed multi-key txn
             # involving both reads and writes???
-            export action invoke(self: node_id, reads: vector[key]) = {
+            export action client_request(self: node_id, reads: vector[key]) = {
                 var now := clock(self).now();
 
                 var qs : vector[query_t];
@@ -92,6 +92,8 @@ process coordinator(self: node_id) = {
 
                 electorate_multicast(self, msg);
                 req_in_flight(self) := true; #ghost
+
+                protocol.handle_requested(self, msg);
             }
 
             #####################################################
@@ -158,6 +160,7 @@ process coordinator(self: node_id) = {
 
             implement commit_msg_t.handle(self: node_id, msg: commit_msg_t) {
                 debug "commit_msg_t.handle" with msg=msg;
+                protocol.handle_committed(self, msg);
             }
 
             implement accept_msg_t.handle(self: node_id, msg: accept_msg_t) {

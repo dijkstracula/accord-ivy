@@ -24,6 +24,9 @@ class txn_t = {
     instance iter : order_iterator(this)
     isolate iso_iter = iter with this
 
+    # TODO: would a txn_id field be useful to disambiguate otherwise-identical
+    # transactions from the same node
+
     field ts: timestamp
     field queries: vector[query_t]
 
