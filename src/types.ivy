@@ -1,23 +1,11 @@
 #lang ivy1.8
-include collections
+
+include nodesets
 include order
 
-instance node_id : iterable
+global {
+    instance node_id : iterable
 
-# Not actually a node, but a value on [0, node.max)
-# that bounds the size of an electorate.
-#var max_failures : node
-
-type status = {
-    notWitnessed,
-    preAccepted,
-    accepted,
-    committed,
-    readyToExecute,
-    executed,
-    applied
+    instance node_it : sequence_iterator(node_id)
+    instance nset : indexset(node_id)
 }
-
-
-type txn_kind_t = { read_kind, write_kind }
-

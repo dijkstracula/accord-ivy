@@ -10,7 +10,8 @@ include types
 
 isolate protocol = {
     specification {
-        # TODO: timestamps for these too???
+        # TODO: timestamps for these too???  We need to figure out how to
+        # encode a max upper bound on `timestamp`.
         relation requested(N: node_id, T: txn_t, At: timestamp)
         relation preaccepted(N: node_id, T: txn_t) 
         relation accepted(N: node_id, T: txn_t) 
@@ -58,6 +59,8 @@ isolate protocol = {
         action handle_preaccepted(self: node_id, msg: preaccept_msg_t, resp: preaccept_reply_msg_t) = {
             debug "protocol.handle_preaccepted" with self=self, msg=msg, resp=resp;
 
+            var tao := msg.txn;
+
             # For any replica P and transaction τ, if PreAccepted(τ) then the
             # following are true:
 
@@ -84,8 +87,14 @@ isolate protocol = {
             # γ,τ, if PREACCEPTED(P,γ) and PREACCEPTED(P,τ), with γ arriving at
             # P before τ, then tγ ̸= tτ.
             require forall Gamma: txn_t.
-                (preaccepted(P, Gamma) & conflicts_with(Gamma, resp.txn))
-                    -> ~(Gamma.ts = resp.txn.ts);
+                (preaccepted(P, Gamma) & conflicts_with(Gamma, tao))
+                    -> ~(Gamma.ts = tao.ts);
+
+            # Lemma B.1. For any replicas P,R and conflicting transactions γ,τ,
+            # if PREACCEPTED(P,γ) and PREACCEPTED(R,τ) then P.tγ ̸= R.tτ.
+            require forall Gamma: txn_t.
+                (preaccepted(P, Gamma) & preaccepted(R, tao) & conflicts_with(Gamma, tao))
+                    -> ~(Gamma.ts = tao.ts);
 
             preaccepted(self, resp.txn) := true;
         }
@@ -106,6 +115,15 @@ isolate protocol = {
             # Property 3.2 (Timestamp consistency). All processes that
             # commit a transaction do so with the same timestamp.
             require committed(P, tao, At) -> (At = tao.ts);
+
+            # Property 3.3 (Dependency safety). Any coordinator committing τ
+            # with tτ does so with depsτ containing all conflicting γ that may
+            # be committed with tγ < tτ.
+
+            # Corollary B.1.1. No two interfering commands commit with the same
+            # execution timestamp.
+            require committed(P, Gamma, GAt) & conflicts_with(Gamma, tao)
+                -> ~(GAt = msg.execute_at);
 
             committed(self, tao, msg.execute_at) := true;
         }

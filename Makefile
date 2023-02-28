@@ -26,6 +26,7 @@ test: build
 	cd $(SRCDIR); $(LCH) $(LCHFLAGS) $(EXE) #| sed -e '/{$$/,/}$$/ d'
 
 proof:
+	cd $(SRCDIR); $(CHK) $(CHKFLAGS) $(TOPLVLSRC)
 	cd $(SRCDIR); $(CHK) $(CHKFLAGS) $(ABSSRC)
 
 clean:

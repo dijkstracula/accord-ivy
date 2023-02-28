@@ -7,6 +7,7 @@ include types
 # be interpreted?
 type key
 type value
+type txn_kind_t = { read_kind, write_kind }
 
 class query_t = {
     field kind: txn_kind_t

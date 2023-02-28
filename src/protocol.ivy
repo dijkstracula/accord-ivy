@@ -1,6 +1,7 @@
 #lang ivy1.8
+
+include failure
 include messages
-include nodesets
 include temporality
 include txn
 include types
@@ -10,21 +11,12 @@ instance server_rpc(txn_t)
 include abstract_protocol
 
 global {
-    instance nset : indexset(node_id)
     instance net : tcp.net(msg_t)
-
-    instance node_it : sequence_iterator(node_id)
 }
 
 # TODO: the coordinator should be an isolate that simply handles phase 1 of the
 # protocol and is composed/mixed into the Node.  (Or perhaps not?)
 process coordinator(self: node_id) = {
-
-    # How many nodes should go into an electorate?
-    # (TODO: maybe we should compute this instead by specifying how many
-    # failures we should support...)
-    var my_electorate : nset
-    var electorate_size : nat
 
     # What other transactions depend on our current proposal?
     # This is accumulated from PreAccept and Accept responses.
@@ -40,6 +32,8 @@ process coordinator(self: node_id) = {
     instance clock : time(self)
     instance sock : net.socket
 
+    instance fd : failure_detector(self)
+
     common {
 
         implementation {
@@ -47,21 +41,6 @@ process coordinator(self: node_id) = {
             after init(self: node_id) {
                 fastpath_accepts(self) := nset.emptyset;
                 slowpath_accepts(self) := nset.emptyset;
-
-                # Why can't this be a CLI argument?
-                electorate_size(self) := 3;
-
-                var i: nat := 1;
-                var curr := self;
-                while i < electorate_size(self) {
-                    my_electorate(self) := my_electorate(self).add(curr);
-                    if curr = curr.max {
-                        curr := 0;
-                    } else {
-                        curr := curr.next;
-                    }
-                    i := i.next;
-                }
             }
 
             # TODO: how can I create a well-formed multi-key txn
@@ -142,7 +121,7 @@ process coordinator(self: node_id) = {
                         fastpath_accepts(self) := fastpath_accepts(self).add(msg.src);
                     }
 
-                    if fastpath_accepts(self).majority(my_electorate(self)) {
+                    if fastpath_accepts(self).majority(fd.my_electorate(self)) {
                         var resp: commit_msg_t;
                         resp.src := self;
                         resp.txn := msg.txn;
@@ -190,7 +169,7 @@ process coordinator(self: node_id) = {
                 var e := node_it.end();
                 while it ~= e {
                     # boy I hate this
-                    if nset.member(it.value(), my_electorate(self)) {
+                    if nset.member(it.value(), fd.my_electorate(self)) {
                         unicast(self, outgoing, it.value());
                     }
                     it := it.next();
