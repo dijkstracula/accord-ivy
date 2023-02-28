@@ -1,0 +1,44 @@
+#lang ivy1.8
+
+include collections
+include order
+
+include types
+
+# Handles "failure detection" and cluster/electorate view management. Right now
+# this is pretty trivial; a node will "simply decide" that another node is dead
+# and drop it from its cluster and electorate view.
+# TODO: should this generally hold all the recovery protocol stuff?
+module failure_detector(self: node_id) = {
+
+    # How many nodes should go into an electorate?
+    # (TODO: maybe we should compute this instead by specifying how many
+    # failures we should support...)
+    var my_electorate : nset
+    var electorate_size : nat
+    
+    after init {
+        # Why can't this be a CLI argument?
+        electorate_size := 3;
+
+        var i: nat := 1;
+        var curr := self;
+        while i < electorate_size {
+            my_electorate := my_electorate.add(curr);
+            if curr = curr.max {
+                curr := 0;
+            } else {
+                curr := curr.next;
+            }
+            i := i.next;
+        }
+    }
+
+    export action is_down(other: node_id) 
+    implement is_down {
+        debug "is_down" with self=self, other=other;
+    }
+
+    # Don't shoot nodes in the head too much
+    attribute is_down.weight = "0.01"
+}
