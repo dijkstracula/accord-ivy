@@ -28,6 +28,9 @@ class txn_t = {
     # TODO: would a txn_id field be useful to disambiguate otherwise-identical
     # transactions from the same node
 
+    field origin: node_id
+    field id: nat
+
     field ts: timestamp
     field queries: vector[query_t]
 
@@ -48,6 +51,7 @@ function interfering_queries(ks1: vector[query_t], ks2: vector[query_t]) : bool 
 
 
 function conflicts_with(t1: txn_t, t2: txn_t) : bool =
+    ~(t1.origin = t2.origin & t1.id = t2.id) &
     interfering_queries(t1.queries, t2.queries)
 
 # In the Java implementation, a CommandBuffer is sharded by key.  For simplicity

@@ -107,14 +107,14 @@ isolate protocol = {
             # γ,τ, if PREACCEPTED(P,γ) and PREACCEPTED(P,τ), with γ arriving at
             # P before τ, then tγ ̸= tτ.
             require forall Gamma: txn_t.
-                (preaccepted(P, Gamma) & conflicts_with(Gamma, tao))
+                (preaccepted(self, Gamma) & conflicts_with(Gamma, tao))
                     -> ~(Gamma.ts = tao.ts);
 
             # Lemma B.1. For any replicas P,R and conflicting transactions γ,τ,
             # if PREACCEPTED(P,γ) and PREACCEPTED(R,τ) then P.tγ ̸= R.tτ.
-            require forall Gamma: txn_t.
-                (preaccepted(P, Gamma) & preaccepted(R, tao) & conflicts_with(Gamma, tao))
-                    -> ~(Gamma.ts = tao.ts);
+            require forall Gamma: txn_t. 
+                    ((preaccepted(P, Gamma) & preaccepted(R, tao) & conflicts_with(Gamma, tao))
+                        -> ~(Gamma.ts = tao.ts));
 
             preaccepted(self, resp.txn) := true;
         }
