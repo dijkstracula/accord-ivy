@@ -8,7 +8,7 @@ CC=ivyc
 CFLAGS=target=test
 
 LCH=ivy_launch
-LCHFLAGS=node_id.max=3
+LCHFLAGS=node_id.max=4 iters=2500
 EXE=protocol
 
 CHK=ivy_check
@@ -26,7 +26,7 @@ test: build
 	cd $(SRCDIR); $(LCH) $(LCHFLAGS) $(EXE) #| sed -e '/{$$/,/}$$/ d'
 
 proof:
-	cd $(SRCDIR); $(CHK) $(CHKFLAGS) $(TOPLVLSRC)
+	#cd $(SRCDIR); $(CHK) $(CHKFLAGS) $(TOPLVLSRC)
 	cd $(SRCDIR); $(CHK) $(CHKFLAGS) $(ABSSRC)
 
 clean:

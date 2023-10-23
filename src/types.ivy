@@ -8,4 +8,13 @@ global {
 
     instance node_it : sequence_iterator(node_id)
     instance nset : indexset(node_id)
+
+    # TODO: implement ordering for this enum to simplify state checks
+    type txn_state = {
+        no_state,
+        preaccepted,
+        accepted,
+        committed,
+        applied
+    }
 }

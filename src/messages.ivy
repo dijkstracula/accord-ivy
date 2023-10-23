@@ -8,50 +8,58 @@ include temporality
 include txn
 include types
 
-module server_rpc(txn_t) = {
-    class msg_t = {
-        action handle(cid: node_id, ^msg:msg_t)
-    }
+class msg_t = {
+    action handle(cid: node_id, ^msg:msg_t)
+}
 
-    subclass preaccept_msg_t of msg_t = {
-        field src: node_id
-        field txn: txn_t
-        field first_proposed_at: timestamp # In the paper, t0
+subclass preaccept_msg_t of msg_t = {
+    field src: node_id
+    field txn: txn_t
+    field first_proposed_at: timestamp # In the paper, t0
 
-        action handle(self: node_id, ^msg:preaccept_msg_t)
-    }
+    action handle(self: node_id, ^msg:preaccept_msg_t)
+}
 
-    subclass preaccept_reply_msg_t of msg_t = {
-        field ok: bool #TODO: when should we get NACKs?
+subclass preaccept_reply_msg_t of msg_t = {
+    field ok: bool #TODO: when should we get NACKs?
 
-        field src: node_id
-        field txn: txn_t
+    field src: node_id
+    field txn: txn_t
 
-        field first_proposed_at: timestamp # In the paper, t0
-        field witnessed_at: timestamp
+    field first_proposed_at: timestamp # In the paper, t0
+    field witnessed_at: timestamp
 
-        field deps: vector[txn_t]
+    field deps: vector[txn_t]
 
-        action handle(self: node_id, ^msg:preaccept_reply_msg_t)
-    }
+    action handle(self: node_id, ^msg:preaccept_reply_msg_t)
+}
 
-    subclass commit_msg_t of msg_t = {
-        field src: node_id
-        field txn: txn_t
-        field execute_at: timestamp
-        
-        field deps: vector[txn_t]
+subclass accept_msg_t of msg_t = {
+    field src: node_id
+    field txn: txn_t
+    field execute_at: timestamp
+
+    field deps: vector[txn_t]
+
+    action handle(self: node_id, ^msg:accept_msg_t)
+}
+
+subclass accept_reply_msg_t of msg_t = {
+    field src: node_id
+    field txn: txn_t
+    field ok: bool #TODO: when should we get NACKs?
+
+    field deps: vector[txn_t]
+
+    action handle(self: node_id, ^msg:accept_reply_msg_t)
+}
+
+subclass commit_msg_t of msg_t = {
+    field src: node_id
+    field txn: txn_t
+    field execute_at: timestamp
     
-        action handle(self: node_id, ^msg:commit_msg_t)
-    }
+    field deps: vector[txn_t]
 
-    subclass accept_msg_t of msg_t = {
-        field src: node_id
-        field txn: txn_t
-        field execute_at: timestamp
-    
-        field deps: vector[txn_t]
-    
-        action handle(self: node_id, ^msg:accept_msg_t)
-    }
+    action handle(self: node_id, ^msg:commit_msg_t)
 }

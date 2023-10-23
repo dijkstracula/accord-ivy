@@ -3,12 +3,14 @@
 include collections
 include order
 
+include messages
 include nodesets
 include temporality
 include txn
 include types
 
 isolate protocol = {
+
     specification {
         # TODO: timestamps for these too???  We need to figure out how to
         # encode a max upper bound on `timestamp`.
@@ -25,6 +27,21 @@ isolate protocol = {
             committed(N,T,A) := false;
             executed(N,T) := false;
         }
+
+        # Top level invariants
+
+        # Execution properties
+
+        # Property 3.1 (Timestamp ordering). For any two conflicting
+        # transactions γ ∼ τ where γ commits before τ is submitted
+        # by a client, tγ < tτ.
+
+        # Property 3.2 (Timestamp consistency). All processes that 
+        # commit a transaction do so with the same timestamp.
+        invariant [ts_consistency]
+            forall N1, N2, Txn, Ts1, Ts2 . 
+                committed(N1, Txn, Ts1) & committed(N2, Txn, Ts2) ->
+                    Ts1 = Ts2
 
         # B.1. Validity
 
@@ -53,6 +70,9 @@ isolate protocol = {
 
         action handle_requested(self: node_id, msg: preaccept_msg_t) = {
             debug "protocol.handle_requested" with self=self, msg=msg;
+
+            require msg.first_proposed_at = msg.txn.ts;
+
             requested(self, msg.txn, msg.first_proposed_at) := true;
         }
 
@@ -97,6 +117,11 @@ isolate protocol = {
                     -> ~(Gamma.ts = tao.ts);
 
             preaccepted(self, resp.txn) := true;
+        }
+        
+        action handle_accepted(self: node_id, msg: accept_msg_t) = {
+            accepted(self, msg.txn) := true;
+            debug "protocol.handle_acepted" with self=self, msg=msg;
         }
 
         action handle_committed(self: node_id, msg: commit_msg_t) = {

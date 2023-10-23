@@ -30,6 +30,16 @@ global {
         ret.real  := self.real;
         ret.seqid := self.seqid.next();
     }
+
+    action max(self: timestamp, other: timestamp) returns (ret: timestamp) = {
+        if self < other {
+            ret.real  := self.real;
+            ret.seqid := self.seqid;
+        } else {
+            ret.real  := other.real;
+            ret.seqid := other.seqid;
+        }
+    }
 }
 
 module time(self: node) = {
@@ -83,6 +93,7 @@ module time(self: node) = {
         action merge(remote_ts: timestamp)
         implement merge {
             if latest_observed < remote_ts {
+                prev_issued := latest_observed; #ghost
                 latest_observed := remote_ts;
             }
         }

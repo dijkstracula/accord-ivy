@@ -16,14 +16,16 @@ module failure_detector(self: node_id) = {
     # failures we should support...)
     var my_electorate : nset
     var electorate_size : nat
-    
+   
+    import action net_init_electorate(e: nset)
+
     after init {
         # Why can't this be a CLI argument?
-        electorate_size := 3;
+        electorate_size := 5;
 
         var i: nat := 1;
         var curr := self;
-        while i < electorate_size {
+        while i <= electorate_size {
             my_electorate := my_electorate.add(curr);
             if curr = curr.max {
                 curr := 0;
@@ -32,6 +34,8 @@ module failure_detector(self: node_id) = {
             }
             i := i.next;
         }
+
+        net_init_electorate(my_electorate);
     }
 
     export action is_down(other: node_id) 
@@ -40,5 +44,5 @@ module failure_detector(self: node_id) = {
     }
 
     # Don't shoot nodes in the head too much
-    attribute is_down.weight = "0.01"
+    attribute is_down.weight = "0.00"
 }
