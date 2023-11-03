@@ -8,58 +8,29 @@ include temporality
 include txn
 include types
 
+type msg_t_kind = {
+    preaccept_kind,
+    preaccept_resp_kind,
+    accept_kind,
+    accept_resp_kind,
+    commit_kind
+}
+
 class msg_t = {
-    action handle(cid: node_id, ^msg:msg_t)
-}
-
-subclass preaccept_msg_t of msg_t = {
-    field src: node_id
-    field txn: txn_t
-    field first_proposed_at: timestamp # In the paper, t0
-
-    action handle(self: node_id, ^msg:preaccept_msg_t)
-}
-
-subclass preaccept_reply_msg_t of msg_t = {
-    field ok: bool #TODO: when should we get NACKs?
+    field kind: msg_t_kind
 
     field src: node_id
     field txn: txn_t
 
+    # For response messages
+    field ok: bool 
+
+    # Preaccept phase
     field first_proposed_at: timestamp # In the paper, t0
     field witnessed_at: timestamp
 
+    # Commit phase
     field deps: vector[txn_t]
 
-    action handle(self: node_id, ^msg:preaccept_reply_msg_t)
-}
-
-subclass accept_msg_t of msg_t = {
-    field src: node_id
-    field txn: txn_t
     field execute_at: timestamp
-
-    field deps: vector[txn_t]
-
-    action handle(self: node_id, ^msg:accept_msg_t)
-}
-
-subclass accept_reply_msg_t of msg_t = {
-    field src: node_id
-    field txn: txn_t
-    field ok: bool #TODO: when should we get NACKs?
-
-    field deps: vector[txn_t]
-
-    action handle(self: node_id, ^msg:accept_reply_msg_t)
-}
-
-subclass commit_msg_t of msg_t = {
-    field src: node_id
-    field txn: txn_t
-    field execute_at: timestamp
-    
-    field deps: vector[txn_t]
-
-    action handle(self: node_id, ^msg:commit_msg_t)
 }

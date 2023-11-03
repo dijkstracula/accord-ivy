@@ -14,6 +14,7 @@ module indexset(basis) = {
     function card(S:set) : index.t
     function cardInter(S:set, T:set) : index.t
     relation majority(S:set, T: set)
+    relation unanimity(S:set, T: set)
     function intersection(S: set, T: set) : set
 
     action emptyset returns(s:set)
@@ -106,6 +107,8 @@ module indexset(basis) = {
             definition cardInter(S,T) = cardInterUpTo(S,T,basis.max)
 
             definition majority(X,Y) = 2 * cardInter(X,Y) > card(Y)
+
+            definition unanimity(X,Y) = cardInter(X,Y) = card(Y)
 
             object spec = {
                 # This is the definition of dijoint sets in terms of

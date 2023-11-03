@@ -6,7 +6,6 @@ include temporality
 include txn
 include types
 
-
 include abstract_protocol
 
 global {
@@ -19,12 +18,22 @@ process coordinator(self: node_id) = {
 
     var next_txn_id : nat
 
+    # Per-txn state
+    # TODO: In the case where a client can issue multiple txns
+    # from the same coordinator, we'll need to make this a txn
+    # state structure, keyed on txn id or something.
+
+    var current_txn: option[txn_t]
+    var ct_state: txn_state
+
     # What other transactions depend on our current proposal?
     # This is accumulated from PreAccept and Accept responses.
     instance deps : ordered_set(txn_t)
 
     var slowpath_accepts : nset
     var fastpath_accepts : nset
+
+    # per-coordinator state
 
     # Committed transactions that have not yet executed (?)
     # TODO: is this actually correct
@@ -34,9 +43,6 @@ process coordinator(self: node_id) = {
     instance sock : net.socket
 
     instance fd : failure_detector(self)
-
-    var current_txn: option[txn_t]
-    var ct_state: txn_state
 
     # Just to simplify execution histories for now, only consider
     # one concurrent request from a given client at a time.
@@ -63,6 +69,8 @@ process coordinator(self: node_id) = {
             # involving both reads and writes???
             export action client_request(self: node_id, k: key, v: value) = {
                 if self = 0 & ~client_in_flight(self) {
+                #if ~client_in_flight(self) {
+                #if true {
                     client_in_flight(self) := true;
 
                     var now := clock(self).now();
@@ -70,7 +78,7 @@ process coordinator(self: node_id) = {
                     var qs : vector[query_t];
                     var q: query_t;
                     q.kind := write_kind;
-                    q.k := k;
+                    q.k := 0; #cast(self);
                     q.v := option[value].just(v);
                     qs := qs.append(q);
 
@@ -93,7 +101,8 @@ process coordinator(self: node_id) = {
 
                     next_txn_id(self) := next_txn_id(self) + 1;
 
-                    var msg : preaccept_msg_t;
+                    var msg : msg_t;
+                    msg.kind := preaccept_kind;
                     msg.src := self;
                     msg.txn := txn;
                     msg.first_proposed_at := now;
@@ -104,46 +113,48 @@ process coordinator(self: node_id) = {
                     protocol.handle_requested(self, msg);
                 }
             }
+            attribute client_request.weight = "0.10"
 
             #####################################################
             # Algorithm 1: Consensus Protocol
             #####################################################
 
-            implement preaccept_msg_t.handle(self: node_id, msg: preaccept_msg_t) {
+            action preaccept_handle(self: node_id, msg: msg_t) = {
                 #debug "preaccept_msg_t.handle" with msg=msg;
+                assert(msg.kind = preaccept_kind);
                 
-                if current_txn(self).is_empty() | ~(current_txn(self).contents() = msg.txn) {
-                    var deps: vector[txn_t];
-                    deps := dependencies(msg.txn, sb(self));
+                var deps: vector[txn_t];
+                deps := dependencies(msg.txn, sb(self));
 
-                    var mc: timestamp;
-                    var proposed_exec_ts: timestamp;
-                    mc := max_timestamp(deps);
-                    if msg.first_proposed_at > mc {
-                        proposed_exec_ts := msg.first_proposed_at; 
-                    } else {
-                        proposed_exec_ts.real   := mc.real;
-                        proposed_exec_ts.seqid := mc.seqid.next();
-                    }
-
-                    var resp : preaccept_reply_msg_t;
-                    resp.ok := true; #TODO
-                    resp.src := self;
-                    resp.txn := msg.txn;
-                    resp.txn.ts := proposed_exec_ts;
-                    resp.deps := filter_timestamps_lt(deps, msg.first_proposed_at);
-                    resp.first_proposed_at := msg.first_proposed_at;
-                    resp.witnessed_at := proposed_exec_ts;
-                    unicast(self, resp, msg.src);
-
-                    current_txn(self) := option[txn_t].just(msg.txn);
-
-                    protocol.handle_preaccepted(self, msg, resp);
+                var mc: timestamp;
+                var proposed_exec_ts: timestamp;
+                mc := max_timestamp(deps);
+                if msg.first_proposed_at > mc {
+                    proposed_exec_ts := msg.first_proposed_at; 
+                } else {
+                    proposed_exec_ts.real   := mc.real;
+                    proposed_exec_ts.seqid := mc.seqid.next();
                 }
+
+                var resp : msg_t;
+                resp.kind := preaccept_resp_kind;
+                resp.ok := true; #TODO
+                resp.src := self;
+                resp.txn := msg.txn;
+                resp.txn.ts := proposed_exec_ts;
+                resp.deps := filter_timestamps_lt(deps, msg.first_proposed_at);
+                resp.first_proposed_at := msg.first_proposed_at;
+                resp.witnessed_at := proposed_exec_ts;
+                unicast(self, resp, msg.src);
+
+                current_txn(self) := option[txn_t].just(msg.txn);
+
+                protocol.handle_preaccepted(self, msg, resp);
             }
 
-            implement preaccept_reply_msg_t.handle(self: node_id, msg: preaccept_reply_msg_t) {
+            action preaccept_reply_handle(self: node_id, msg: msg_t) = {
                 #debug "preaccept_reply_msg_t.handle" with msg=msg;
+                assert(msg.kind = preaccept_resp_kind);
 
                 if msg.ok {
                     # Merge all dependencies
@@ -151,13 +162,20 @@ process coordinator(self: node_id) = {
                         deps(self).insert(d);
                     }
 
-                    slowpath_accepts(self) := slowpath_accepts(self).add(msg.src);
                     if msg.witnessed_at = msg.first_proposed_at {
                         fastpath_accepts(self) := fastpath_accepts(self).add(msg.src);
+                    } else {
+                        slowpath_accepts(self) := slowpath_accepts(self).add(msg.src);
                     }
 
-                    if fastpath_accepts(self).majority(fd.my_electorate(self)) {
-                        var resp: commit_msg_t;
+                    # If a fast-path quorum of replicas unanimously accept and
+                    # record this timestamp as the most recent, then only this
+                    # single timestamp may be recovered and it is decided
+                    # immediately.
+
+                    if fastpath_accepts(self).unanimity(fd.my_electorate(self)) {
+                        var resp: msg_t;
+                        resp.kind := commit_kind;
                         resp.src := self;
                         resp.txn := msg.txn;
                         resp.execute_at := msg.first_proposed_at;
@@ -173,15 +191,22 @@ process coordinator(self: node_id) = {
                 }
             }
 
-            implement accept_msg_t.handle(self: node_id, msg: accept_msg_t) {
+            action accept_reply_handle(self: node_id, msg: msg_t) = {
+                assert(msg.kind = accept_resp_kind);
+            }
+
+            action accept_handle(self: node_id, msg: msg_t) = {
                 #debug "accept_msg_t.handle" with msg=msg;
+                assert(msg.kind = accept_kind);
+
                 clock.merge(self, msg.execute_at);
 
                 var deps: vector[txn_t];
                 deps := dependencies(msg.txn, sb(self));
                 deps := filter_timestamps_lt(deps, msg.execute_at);
 
-                var resp: accept_reply_msg_t;
+                var resp: msg_t;
+                resp.kind := accept_resp_kind;
                 resp.ok := true;
                 resp.src := self;
                 resp.txn := msg.txn;
@@ -195,17 +220,32 @@ process coordinator(self: node_id) = {
             # Algorithm 2: Execution Protocol
             #####################################################
 
-            implement commit_msg_t.handle(self: node_id, msg: commit_msg_t) {
+            action commit_handle(self: node_id, msg: msg_t) = {
                 #debug "commit_msg_t.handle" with msg=msg;
+                assert(msg.kind = commit_kind);
                 protocol.handle_committed(self, msg);
             }
 
 
+            #####################################################
             # Network helpers (c/o Ken's HW6 starter)
+            #####################################################
 
             implement sock.recv(self: node_id, src:tcp.endpoint, msg:msg_t) {
                 net_recv(self, msg);
-                msg.handle(self);
+                if msg.kind = preaccept_kind {
+                    preaccept_handle(self, msg);
+                } else if msg.kind = preaccept_resp_kind {
+                    preaccept_reply_handle(self, msg);
+                } else if msg.kind = accept_kind {
+                    accept_handle(self, msg);
+                } else if msg.kind = accept_resp_kind {
+                    accept_reply_handle(self, msg);
+                } else if msg.kind = commit_kind {
+                    commit_handle(self, msg);
+                } else {
+                    assert false
+                }
             }
 
             action unicast(self: node_id, outgoing : msg_t, dst_id : node_id) = {

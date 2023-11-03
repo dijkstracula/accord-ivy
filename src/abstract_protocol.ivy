@@ -59,7 +59,7 @@ isolate protocol = {
         # (True by default in our implemention?)
 
         # Theorem B.2.1.2: P.t0τ.seq = 0
-        action seqid_is_zero(msg: preaccept_msg_t) = {
+        action seqid_is_zero(msg: msg_t) = {
             require msg.first_proposed_at.seqid = 0
         }
 
@@ -68,16 +68,18 @@ isolate protocol = {
         #  distinct tuple.
         #TODO
 
-        action handle_requested(self: node_id, msg: preaccept_msg_t) = {
+        action handle_requested(self: node_id, msg: msg_t) = {
             debug "protocol.handle_requested" with self=self, msg=msg;
-
+            require msg.kind = preaccept_kind;
             require msg.first_proposed_at = msg.txn.ts;
 
             requested(self, msg.txn, msg.first_proposed_at) := true;
         }
 
-        action handle_preaccepted(self: node_id, msg: preaccept_msg_t, resp: preaccept_reply_msg_t) = {
+        action handle_preaccepted(self: node_id, msg: msg_t, resp: msg_t) = {
             debug "protocol.handle_preaccepted" with self=self, msg=msg, resp=resp;
+            require msg.kind = preaccept_kind;
+            require resp.kind = preaccept_resp_kind;
 
             var tao := msg.txn;
 
@@ -119,12 +121,15 @@ isolate protocol = {
             preaccepted(self, resp.txn) := true;
         }
         
-        action handle_accepted(self: node_id, msg: accept_msg_t) = {
+        action handle_accepted(self: node_id, msg: msg_t) = {
+            require msg.kind = accept_kind;
+
             accepted(self, msg.txn) := true;
             debug "protocol.handle_acepted" with self=self, msg=msg;
         }
 
-        action handle_committed(self: node_id, msg: commit_msg_t) = {
+        action handle_committed(self: node_id, msg: msg_t) = {
+            require msg.kind = commit_kind;
             debug "protocol.handle_committed" with self=self, msg=msg;
 
             var tao := msg.txn;

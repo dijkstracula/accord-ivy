@@ -61,10 +61,11 @@ module time(self: node) = {
         }
 
         # Advance time on occasion.
-        action tick
+        export action tick
         implement tick {
             curr_time := curr_time.next;
         }
+        attribute tick.weight = "0.1"
 
         # Get "the current time".
         action now returns (ret: timestamp)
