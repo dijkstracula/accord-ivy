@@ -40,7 +40,7 @@ class txn_t = {
     #        LHS.queries.value(J) = RHS.queries.value(J) &
     #        LHS.queries.value(I) < RHS.queries.value(I)))
     
-    definition (LHS: txn_t < RHS: txn_t) : bool = LHS.ts < RHS.ts
+    definition (LHS: txn_t < RHS: txn_t) : bool = ts_lt(LHS.ts, RHS.ts)
 }
 
 function interfering_queries(ks1: vector[query_t], ks2: vector[query_t]) : bool =
@@ -64,7 +64,7 @@ action filter_timestamps_lt(txns: vector[txn_t], ts: timestamp) returns (ret: ve
     while it ~= e {
         var cur := txns.value(it);
 
-        if cur.ts < ts {
+        if ts_lt(cur.ts, ts) {
             ret := ret.append(cur);
         }
 
@@ -82,7 +82,7 @@ action max_timestamp(txns: vector[txn_t]) returns (ret: timestamp) = {
         var cur := txns.value(it);
 
         # TODO: if both cmds are reads, not a conflict?
-        if opt_ret.is_empty | opt_ret.contents() < cur.ts {
+        if opt_ret.is_empty | ts_lt(opt_ret.contents(), cur.ts) {
             opt_ret := option[timestamp].just(cur.ts);
         }
 

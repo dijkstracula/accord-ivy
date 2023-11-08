@@ -98,7 +98,7 @@ isolate protocol = {
 
             # 3. P.t0 τ ≤ P.tτ
             require msg.first_proposed_at = resp.first_proposed_at;
-            require resp.first_proposed_at <= resp.witnessed_at;
+            require ts_le(resp.first_proposed_at, resp.witnessed_at);
 
             # Observation B.2.1.2. No two transactions are assigned the same t0.
             #require forall C1: cmd_t, C2: cmd_t . 

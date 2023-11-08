@@ -16,16 +16,22 @@ global {
         field seqid: sequence
     }
 
-    function (LHS: timestamp < RHS: timestamp) =
+    function ts_eq (LHS: timestamp, RHS: timestamp) =
+        LHS.real = RHS.real & 
+        LHS.seqid = RHS.seqid
+
+    function ts_lt (LHS: timestamp, RHS: timestamp) =
         LHS.real < RHS.real |
         LHS.real = RHS.real & LHS.seqid < RHS.seqid 
 
-    function (LHS: timestamp = RHS: timestamp) =
-        LHS.real = RHS.real & 
-        LHS.seqid = RHS.seqid
-    
-    function ts_lt(LHS: timestamp, RHS: timestamp) = LHS < RHS
+    function ts_gt (LHS: timestamp, RHS: timestamp) =
+        LHS.real > RHS.real |
+        LHS.real = RHS.real & LHS.seqid > RHS.seqid 
 
+    function ts_le (LHS: timestamp, RHS: timestamp) =
+        ts_eq(LHS, RHS) | ts_lt(LHS, RHS)
+
+    
     action next(self: timestamp) returns (ret: timestamp) = {
         ret.real  := self.real;
         ret.seqid := self.seqid.next();
@@ -93,7 +99,7 @@ module time(self: node) = {
 
         action merge(remote_ts: timestamp)
         implement merge {
-            if latest_observed < remote_ts {
+            if ts_lt(latest_observed, remote_ts) {
                 prev_issued := latest_observed; #ghost
                 latest_observed := remote_ts;
             }
@@ -102,7 +108,7 @@ module time(self: node) = {
 
     # Our clock must always move forward, no matter how coarse the real clock
     # is.
-    invariant [clock_monotonicity] prev_issued <= latest_observed
+    invariant [clock_monotonicity] ts_lt(prev_issued, latest_observed) | ts_eq(prev_issued, latest_observed)
 
     specification {
         var prev_issued : timestamp

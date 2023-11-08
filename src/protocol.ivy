@@ -129,7 +129,7 @@ process coordinator(self: node_id) = {
                 var mc: timestamp;
                 var proposed_exec_ts: timestamp;
                 mc := max_timestamp(deps);
-                if msg.first_proposed_at > mc {
+                if ts_gt(msg.first_proposed_at, mc) {
                     proposed_exec_ts := msg.first_proposed_at; 
                 } else {
                     proposed_exec_ts.real   := mc.real;
