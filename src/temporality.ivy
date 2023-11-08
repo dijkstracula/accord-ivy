@@ -48,7 +48,7 @@ global {
     }
 }
 
-module time(self: node) = {
+module time = {
 
     implementation {
         # Our implementation of gettimeofday()

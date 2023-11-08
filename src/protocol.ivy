@@ -39,7 +39,7 @@ process coordinator(self: node_id) = {
     # TODO: is this actually correct
     var sb: store_buffer
 
-    instance clock : time(self)
+    instance clock : time
     instance sock : net.socket
 
     instance fd : failure_detector(self)
