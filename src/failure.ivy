@@ -3,7 +3,7 @@
 include collections
 include order
 
-include types
+include sorts
 
 # Handles "failure detection" and cluster/electorate view management. Right now
 # this is pretty trivial; a node will "simply decide" that another node is dead

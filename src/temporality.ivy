@@ -4,7 +4,7 @@
 
 include collections
 include order
-include types
+include sorts
 
 global {
     instance walltime : unbounded_sequence

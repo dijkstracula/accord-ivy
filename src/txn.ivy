@@ -1,7 +1,7 @@
 #lang ivy1.8
 
 include collections
-include types
+include sorts
 
 # Leave these uninterpreted here: TODO: where should they actually
 # be interpreted?

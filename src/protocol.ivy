@@ -4,7 +4,7 @@ include failure
 include messages
 include temporality
 include txn
-include types
+include sorts
 
 include abstract_protocol
 

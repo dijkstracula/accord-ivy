@@ -7,7 +7,7 @@ include messages
 include nodesets
 include temporality
 include txn
-include types
+include sorts
 
 isolate protocol = {
 

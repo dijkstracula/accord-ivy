@@ -6,7 +6,7 @@ include collections
 
 include temporality
 include txn
-include types
+include sorts
 
 type msg_t_kind = {
     preaccept_kind,
