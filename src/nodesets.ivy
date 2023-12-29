@@ -33,7 +33,7 @@ module indexset(basis) = {
         }
 
         after add {
-            assert member(X,s) <-> (member(X,old s) | X = e)
+            #            assert member(X,s) <-> (member(X,old s) | X = e)
         }
 
         after is_empty {

@@ -10,152 +10,151 @@ include txn
 include sorts
 
 isolate protocol = {
+    # TODO: timestamps for these too???  We need to figure out how to
+    # encode a max upper bound on `timestamp`.
+    relation requested(N: node_id, T: txn_t, At: timestamp)
+    relation preaccepted(N: node_id, T: txn_t) 
+    relation accepted(N: node_id, T: txn_t) 
+    relation committed(N: node_id, T: txn_t, At: timestamp) 
+    relation executed(N: node_id, T: txn_t)
 
-    specification {
-        # TODO: timestamps for these too???  We need to figure out how to
-        # encode a max upper bound on `timestamp`.
-        relation requested(N: node_id, T: txn_t, At: timestamp)
-        relation preaccepted(N: node_id, T: txn_t) 
-        relation accepted(N: node_id, T: txn_t) 
-        relation committed(N: node_id, T: txn_t, At: timestamp) 
-        relation executed(N: node_id, T: txn_t)
+    after init {
+        requested(N,T,A) := false;
+        preaccepted(N,T) := false;
+        accepted(N,T) := false;
+        committed(N,T,A) := false;
+        executed(N,T) := false;
+    }
 
-        after init {
-            requested(N,T,A) := false;
-            preaccepted(N,T) := false;
-            accepted(N,T) := false;
-            committed(N,T,A) := false;
-            executed(N,T) := false;
-        }
+    # Top level invariants
 
-        # Top level invariants
+    # Execution properties
 
-        # Execution properties
+    # Property 3.1 (Timestamp ordering). For any two conflicting
+    # transactions γ ∼ τ where γ commits before τ is submitted
+    # by a client, tγ < tτ.
+
+    # Property 3.2 (Timestamp consistency). All processes that 
+    # commit a transaction do so with the same timestamp.
+    invariant [ts_consistency]
+    forall N1, N2, Txn, Ts1, Ts2 . 
+    committed(N1, Txn, Ts1) & committed(N2, Txn, Ts2) ->
+    Ts1 = Ts2
+
+    # B.1. Validity
+
+    # Transaction τ executes and applies at replicas only if it was
+    # submitted by a client.
+    invariant [validity_executed] 
+    forall T: txn_t. executed(N1,T) -> requested(N2, T, A)
+
+    # B.2. Isolation
+
+    # B.2.1. Consistency
+
+    # Theorem B.2.1.1: For any replica P and transaction \tao, P.t0 τ
+    # is that which is assigned by the original coordinator for τ
+    # (True by default in our implemention?)
+
+    # Theorem B.2.1.2: P.t0τ.seq = 0
+    action seqid_is_zero(msg: msg_t) = {
+        require msg.first_proposed_at.seqid = 0
+    }
+
+    #  B.2.1.3. For any transaction τ, and ballot b belonging to some
+    #  coordinator C, C attempts to commit τ using b for at most one
+    #  distinct tuple.
+    #TODO
+
+    action handle_requested(self: node_id, msg: msg_t) = {
+        #debug "protocol.handle_requested" with self=self, msg=msg;
+        require msg.kind = preaccept_kind;
+        require msg.first_proposed_at = msg.txn.ts;
+
+        requested(self, msg.txn, msg.first_proposed_at) := true;
+    }
+
+    action handle_preaccepted(self: node_id, msg: msg_t, resp: msg_t) = {
+        #debug "protocol.handle_preaccepted" with self=self, msg=msg, resp=resp;
+        require msg.kind = preaccept_kind;
+        require resp.kind = preaccept_resp_kind;
+
+        var tao: txn_t;
+        tao := msg.txn;
+
+        # For any replica P and transaction τ, if PreAccepted(τ) then the
+        # following are true:
+
+        # 1. For any replica P and transaction \tao, P.t0 τ is that which
+        # is assigned by the original coordinator for τ (True by default in
+        # our implemention?)
+
+        # TODO: The hand proof paramerizes on the replica whereas we are
+        # not.  What do?
+
+        # 2. P.t0τ.seq = 0
+        seqid_is_zero(msg);
+
+        # 3. P.t0 τ ≤ P.tτ
+        require msg.first_proposed_at = resp.first_proposed_at;
+        require ts_le(resp.first_proposed_at, resp.witnessed_at);
+
+        # Observation B.2.1.2. No two transactions are assigned the same t0.
+        #require forall C1: cmd_t, C2: cmd_t . 
+        #    executed(N1,C1) = executed(N2,C2) ->
+        #        (C1.ts = C2.ts -> C1.txn = C2.txn);
+
+        # Observation B.4. For any replica P and conflicting transactions
+        # γ,τ, if PREACCEPTED(P,γ) and PREACCEPTED(P,τ), with γ arriving at
+        # P before τ, then tγ ̸= tτ.
+        require forall Gamma: txn_t.
+        (preaccepted(self, Gamma) & conflicts_with(Gamma, tao))
+        -> ~(Gamma.ts = tao.ts);
+
+        # Lemma B.1. For any replicas P,R and conflicting transactions γ,τ,
+        # if PREACCEPTED(P,γ) and PREACCEPTED(R,τ) then P.tγ ̸= R.tτ.
+        require forall Gamma: txn_t. 
+        ((preaccepted(P, Gamma) & preaccepted(R, tao) & conflicts_with(Gamma, tao))
+        -> ~(Gamma.ts = tao.ts));
+
+        preaccepted(self, resp.txn) := true;
+    }
+
+    action handle_accepted(self: node_id, msg: msg_t) = {
+        require msg.kind = accept_kind;
+
+        accepted(self, msg.txn) := true;
+        #debug "protocol.handle_acepted" with self=self, msg=msg;
+    }
+
+    action handle_committed(self: node_id, msg: msg_t) = {
+        require msg.kind = commit_kind;
+        #debug "protocol.handle_committed" with self=self, msg=msg;
+
+        var tao: txn_t;
+        tao := msg.txn;
 
         # Property 3.1 (Timestamp ordering). For any two conflicting
         # transactions γ ∼ τ where γ commits before τ is submitted
         # by a client, tγ < tτ.
+        # TODO: upper bound stuff
+        #require forall Gamma: txn_t.
+        #    (committed(P, Gamma, CommittedAt) & conflicts_with(Gamma, tao))
+        #        -> (Gamma.ts < tao.ts);
 
-        # Property 3.2 (Timestamp consistency). All processes that 
+        # Property 3.2 (Timestamp consistency). All processes that
         # commit a transaction do so with the same timestamp.
-        invariant [ts_consistency]
-            forall N1, N2, Txn, Ts1, Ts2 . 
-                committed(N1, Txn, Ts1) & committed(N2, Txn, Ts2) ->
-                    Ts1 = Ts2
+        require forall P, At. committed(P, tao, At) -> (At = tao.ts);
 
-        # B.1. Validity
+        # Property 3.3 (Dependency safety). Any coordinator committing τ
+        # with tτ does so with depsτ containing all conflicting γ that may
+        # be committed with tγ < tτ.
 
-        # Transaction τ executes and applies at replicas only if it was
-        # submitted by a client.
-        invariant [validity_executed] 
-            forall T: txn_t. executed(N1,T) -> requested(N2, T, A)
+        # Corollary B.1.1. No two interfering commands commit with the same
+        # execution timestamp.
+        require forall P, Gamma, GAt. committed(P, Gamma, GAt) & conflicts_with(Gamma, tao)
+        -> ~(GAt = msg.execute_at);
 
-        # B.2. Isolation
-
-        # B.2.1. Consistency
-
-        # Theorem B.2.1.1: For any replica P and transaction \tao, P.t0 τ
-        # is that which is assigned by the original coordinator for τ
-        # (True by default in our implemention?)
-
-        # Theorem B.2.1.2: P.t0τ.seq = 0
-        action seqid_is_zero(msg: msg_t) = {
-            require msg.first_proposed_at.seqid = 0
-        }
-
-        #  B.2.1.3. For any transaction τ, and ballot b belonging to some
-        #  coordinator C, C attempts to commit τ using b for at most one
-        #  distinct tuple.
-        #TODO
-
-        action handle_requested(self: node_id, msg: msg_t) = {
-            debug "protocol.handle_requested" with self=self, msg=msg;
-            require msg.kind = preaccept_kind;
-            require msg.first_proposed_at = msg.txn.ts;
-
-            requested(self, msg.txn, msg.first_proposed_at) := true;
-        }
-
-        action handle_preaccepted(self: node_id, msg: msg_t, resp: msg_t) = {
-            debug "protocol.handle_preaccepted" with self=self, msg=msg, resp=resp;
-            require msg.kind = preaccept_kind;
-            require resp.kind = preaccept_resp_kind;
-
-            var tao := msg.txn;
-
-            # For any replica P and transaction τ, if PreAccepted(τ) then the
-            # following are true:
-
-            # 1. For any replica P and transaction \tao, P.t0 τ is that which
-            # is assigned by the original coordinator for τ (True by default in
-            # our implemention?)
-
-            # TODO: The hand proof paramerizes on the replica whereas we are
-            # not.  What do?
-            
-            # 2. P.t0τ.seq = 0
-            seqid_is_zero(msg);
-
-            # 3. P.t0 τ ≤ P.tτ
-            require msg.first_proposed_at = resp.first_proposed_at;
-            require ts_le(resp.first_proposed_at, resp.witnessed_at);
-
-            # Observation B.2.1.2. No two transactions are assigned the same t0.
-            #require forall C1: cmd_t, C2: cmd_t . 
-            #    executed(N1,C1) = executed(N2,C2) ->
-            #        (C1.ts = C2.ts -> C1.txn = C2.txn);
-
-            # Observation B.4. For any replica P and conflicting transactions
-            # γ,τ, if PREACCEPTED(P,γ) and PREACCEPTED(P,τ), with γ arriving at
-            # P before τ, then tγ ̸= tτ.
-            require forall Gamma: txn_t.
-                (preaccepted(self, Gamma) & conflicts_with(Gamma, tao))
-                    -> ~(Gamma.ts = tao.ts);
-
-            # Lemma B.1. For any replicas P,R and conflicting transactions γ,τ,
-            # if PREACCEPTED(P,γ) and PREACCEPTED(R,τ) then P.tγ ̸= R.tτ.
-            require forall Gamma: txn_t. 
-                    ((preaccepted(P, Gamma) & preaccepted(R, tao) & conflicts_with(Gamma, tao))
-                        -> ~(Gamma.ts = tao.ts));
-
-            preaccepted(self, resp.txn) := true;
-        }
-        
-        action handle_accepted(self: node_id, msg: msg_t) = {
-            require msg.kind = accept_kind;
-
-            accepted(self, msg.txn) := true;
-            debug "protocol.handle_acepted" with self=self, msg=msg;
-        }
-
-        action handle_committed(self: node_id, msg: msg_t) = {
-            require msg.kind = commit_kind;
-            debug "protocol.handle_committed" with self=self, msg=msg;
-
-            var tao := msg.txn;
-
-            # Property 3.1 (Timestamp ordering). For any two conflicting
-            # transactions γ ∼ τ where γ commits before τ is submitted
-            # by a client, tγ < tτ.
-            # TODO: upper bound stuff
-            #require forall Gamma: txn_t.
-            #    (committed(P, Gamma, CommittedAt) & conflicts_with(Gamma, tao))
-            #        -> (Gamma.ts < tao.ts);
-
-            # Property 3.2 (Timestamp consistency). All processes that
-            # commit a transaction do so with the same timestamp.
-            require committed(P, tao, At) -> (At = tao.ts);
-
-            # Property 3.3 (Dependency safety). Any coordinator committing τ
-            # with tτ does so with depsτ containing all conflicting γ that may
-            # be committed with tγ < tτ.
-
-            # Corollary B.1.1. No two interfering commands commit with the same
-            # execution timestamp.
-            require committed(P, Gamma, GAt) & conflicts_with(Gamma, tao)
-                -> ~(GAt = msg.execute_at);
-
-            committed(self, tao, msg.execute_at) := true;
-        }
+        committed(self, tao, msg.execute_at) := true;
     }
 }

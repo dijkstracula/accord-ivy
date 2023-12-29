@@ -2,7 +2,6 @@
 
 include collections
 include order
-
 include sorts
 
 # Handles "failure detection" and cluster/electorate view management. Right now
@@ -23,8 +22,10 @@ module failure_detector(self: node_id) = {
         # Why can't this be a CLI argument?
         electorate_size := 5;
 
-        var i: nat := 1;
-        var curr := self;
+        var i: nat;
+        i := 1;
+        var curr;
+        curr := self;
         while i <= electorate_size {
             my_electorate := my_electorate.add(curr);
             if curr = curr.max {
@@ -40,7 +41,7 @@ module failure_detector(self: node_id) = {
 
     export action is_down(other: node_id) 
     implement is_down {
-        debug "is_down" with self=self, other=other;
+        #debug "is_down" with self=self, other=other;
     }
 
     # Don't shoot nodes in the head too much

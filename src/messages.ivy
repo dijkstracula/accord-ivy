@@ -1,7 +1,6 @@
 #lang ivy1.8
 
 include network
-include numbers
 include collections
 
 include temporality
@@ -30,7 +29,7 @@ class msg_t = {
     field witnessed_at: timestamp
 
     # Commit phase
-    field deps: vector[txn_t]
+    field deps: store_buffer
 
     field execute_at: timestamp
 }

@@ -1,7 +1,9 @@
 #lang ivy1.8
 
 include collections
+include numbers
 include sorts
+include temporality
 
 # Leave these uninterpreted here: TODO: where should they actually
 # be interpreted?
@@ -9,11 +11,17 @@ type key
 type value
 type txn_kind_t = { read_kind, write_kind }
 
+# TODO: implementing autoinstance would make this easier.
+instance optional_value : option(value)
+
 class query_t = {
     field kind: txn_kind_t
     field k: key
-    field v: option[value]
+    field v: optional_value
 }
+
+# TODO: implementing autoinstance would make this easier.
+instance query_vector : vector(query_t)
 
 # A txn_t is a particular transation to be executed at a given logical time.
 # Nodes will also need to keep track of commands that they know about yet but
@@ -22,6 +30,7 @@ class query_t = {
 class txn_t = {
     alias t = this
 
+    # TODO: without operator overloading, do we need this?
     instance iter : order_iterator(this)
     isolate iso_iter = iter with this
 
@@ -32,85 +41,84 @@ class txn_t = {
     field id: nat
 
     field ts: timestamp
-    field queries: vector[query_t]
+    field queries: query_vector
 
-    #definition (LHS: txn_t < RHS: txn_t) : bool = 
-    #    (exists I. 0 <= I & I < index.max2(LHS.queries.end(), RHS.queries.end()) &
-    #    (forall J. 0 <= J & J < I ->
-    #        LHS.queries.value(J) = RHS.queries.value(J) &
-    #        LHS.queries.value(I) < RHS.queries.value(I)))
+    function txn_lt(LHS: txn_t, RHS: txn_t) : bool = 
+        (exists I. 0 <= I & I < index.max2(LHS.queries.end(), RHS.queries.end()) &
+        (forall J. 0 <= J & J < I ->
+            LHS.queries.value(J) = RHS.queries.value(J) &
+            LHS.queries.value(I) < RHS.queries.value(I)))
     
     definition (LHS: txn_t < RHS: txn_t) : bool = ts_lt(LHS.ts, RHS.ts)
 }
 
-function interfering_queries(ks1: vector[query_t], ks2: vector[query_t]) : bool =
-   exists I1, I2. ks1.begin() <= I1 & I1 < ks1.end() 
-                & ks2.begin() <= I2 & I2 < ks2.end()
-                & (ks1.value(I1).kind = write_kind | ks2.value(I2).kind = write_kind)
-                & ks1.value(I1).k = ks2.value(I2).k
-
-
-function conflicts_with(t1: txn_t, t2: txn_t) : bool =
-    ~(t1.origin = t2.origin & t1.id = t2.id) &
-    interfering_queries(t1.queries, t2.queries)
-
 # In the Java implementation, a CommandBuffer is sharded by key.  For simplicity
 # let's be sloppier for now.
-alias store_buffer = vector[txn_t]
+instance store_buffer : vector(txn_t)
 
-action filter_timestamps_lt(txns: vector[txn_t], ts: timestamp) returns (ret: vector[txn_t]) = {
-    var it := txns.begin();
-    var e := txns.end();
+function interfering_queries(Ks1: query_vector, Ks2: query_vector) : bool =
+   exists I1, I2. Ks1.begin() <= I1 & I1 < Ks1.end() 
+                & Ks2.begin() <= I2 & I2 < Ks2.end()
+                & (Ks1.value(I1).kind = write_kind | Ks2.value(I2).kind = write_kind)
+                & Ks1.value(I1).k = Ks2.value(I2).k
+
+
+function conflicts_with(T1: txn_t, T2: txn_t) : bool =
+    ~(T1.origin = T2.origin & T1.id = T2.id) &
+    interfering_queries(T1.queries, T2.queries)
+
+action filter_timestamps_lt(txns: store_buffer, ts: timestamp) returns (ret: store_buffer) = {
+    var it: index;
+    var e: index;
+    it := txns.begin;
+    e := txns.end;
     while it ~= e {
-        var cur := txns.value(it);
+        var cur: txn_t;
+        cur := txns.value(it);
 
         if ts_lt(cur.ts, ts) {
             ret := ret.append(cur);
         }
 
-        it := it.next();
+        it := it + 1;
     }
 }
 
-action max_timestamp(txns: vector[txn_t]) returns (ret: timestamp) = {
-    var opt_ret: option[timestamp];
-    opt_ret := option[timestamp].empty;
+action max_timestamp(txns: store_buffer) returns (ret: timestamp) = {
+    ret.real := 0;
+    ret.seqid := 0;
 
-    var it := txns.begin();
-    var e := txns.end();
+    var it: index;
+    var e: index;
+    it := txns.begin;
+    e := txns.end;
     while it ~= e {
-        var cur := txns.value(it);
+        var cur: txn_t;
+        cur := txns.value(it);
 
         # TODO: if both cmds are reads, not a conflict?
-        if opt_ret.is_empty | ts_lt(opt_ret.contents(), cur.ts) {
-            opt_ret := option[timestamp].just(cur.ts);
+        if ts_gt(cur.ts, ret) {
+            ret := cur.ts;
         }
 
-        it := it.next();
-    }
-
-    if opt_ret.is_empty {
-        # TODO: I guess I'm doing this to return the "minimal" timestamp.  Is
-        # there a way to do this in a more principled way?  (Or should I just
-        # return an option?)
-        ret.real := 0;
-        ret.seqid := 0;
-    } else {
-        ret := opt_ret.contents();
+        it := it + 1;
     }
 }
 
-action dependencies(t: txn_t, sb: store_buffer) returns (deps: vector[txn_t]) = {
-    var it := sb.begin();
-    var e := sb.end();
+action dependencies(t: txn_t, sb: store_buffer) returns (deps: store_buffer) = {
+    var it: index;
+    var e: index;
+    it := sb.begin;
+    e := sb.end;
     while it ~= e {
-        var gamma : txn_t := sb.value(it);
+        var gamma: txn_t;
+        gamma := sb.value(it);
 
         # TODO: This feels overspecified?  Overlapping readsets are, I think,
         # sufficient, but not necessary for txn and gamma.txn to conflict.
         if interfering_queries(t.queries, gamma.queries) {
             deps := deps.append(gamma); 
-            it := it.next();
+            it := it + 1;
         }
     }
 }
