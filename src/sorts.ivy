@@ -1,6 +1,5 @@
 #lang ivy1.8
 
-include collections
 include nodesets
 include order
 
@@ -18,5 +17,4 @@ global {
         committed,
         applied
     }
-
 }
