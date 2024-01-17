@@ -2,6 +2,8 @@
 
 include collections
 include sorts
+include numbers
+include temporality
 
 # Leave these uninterpreted here: TODO: where should they actually
 # be interpreted?
