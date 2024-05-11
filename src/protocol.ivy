@@ -23,12 +23,7 @@ process coordinator(self: node_id) = {
     # from the same coordinator, we'll need to make this a txn
     # state structure, keyed on txn id or something.
 
-    var current_txn: option[txn_t]
-    var ct_state: txn_state
-
-    # What other transactions depend on our current proposal?
-    # This is accumulated from PreAccept and Accept responses.
-    instance deps : ordered_set(txn_t)
+    var current_txn: option[command_t]
 
     var slowpath_accepts : nset
     var fastpath_accepts : nset
@@ -61,8 +56,7 @@ process coordinator(self: node_id) = {
                 next_txn_id(self) := 0;
                 fastpath_accepts(self) := nset.emptyset;
                 slowpath_accepts(self) := nset.emptyset;
-                current_txn(self) := option[txn_t].empty();
-                ct_state(self) := no_state;
+                current_txn(self) := option[command_t].empty();
             }
 
             # TODO: how can I create a well-formed multi-key txn
@@ -75,16 +69,16 @@ process coordinator(self: node_id) = {
 
                     var now := clock(self).now();
 
-                    var qs : vector[query_t];
-                    var q: query_t;
-                    q.kind := write_kind;
-                    q.k := 0; #cast(self);
-                    q.v := option[value].just(v);
-                    qs := qs.append(q);
+                    var txns : vector[txn_t];
+                    var t: txn_t;
+                    t.kind := write_kind;
+                    t.k := 0; #cast(self);
+                    t.v := option[value].just(v);
+                    txns := txns.append(t);
 
                     #var i: index := 0;
                     #while i < reads.end() {
-                    #    var q: query_t;
+                    #    var q: txn_t;
                     #    q.kind := read_kind;
                     #    q.k := reads.get(i);
                     #    q.v := option[value].empty;
@@ -93,18 +87,18 @@ process coordinator(self: node_id) = {
                     #    i := i + 1;
                     #}
 
-                    var txn : txn_t;
-                    txn.origin := self;
-                    txn.id := next_txn_id(self);
-                    txn.ts := now;
-                    txn.queries := qs;
+                    var cmd : command_t;
+                    cmd.origin := self;
+                    cmd.id := next_txn_id(self);
+                    cmd.ts := now;
+                    cmd.queries := txns;
 
                     next_txn_id(self) := next_txn_id(self) + 1;
 
                     var msg : msg_t;
                     msg.kind := preaccept_kind;
                     msg.src := self;
-                    msg.txn := txn;
+                    msg.cmd := cmd;
                     msg.first_proposed_at := now;
 
                     electorate_multicast(self, msg);
@@ -123,8 +117,8 @@ process coordinator(self: node_id) = {
                 #debug "preaccept_msg_t.handle" with msg=msg;
                 assert(msg.kind = preaccept_kind);
                 
-                var deps: vector[txn_t];
-                deps := dependencies(msg.txn, sb(self));
+                var deps: vector[command_t];
+                deps := dependencies(msg.cmd, sb(self));
 
                 var mc: timestamp;
                 var proposed_exec_ts: timestamp;
@@ -140,14 +134,14 @@ process coordinator(self: node_id) = {
                 resp.kind := preaccept_resp_kind;
                 resp.ok := true; #TODO
                 resp.src := self;
-                resp.txn := msg.txn;
-                resp.txn.ts := proposed_exec_ts;
+                resp.cmd := msg.cmd;
+                resp.cmd.ts := proposed_exec_ts;
                 resp.deps := filter_timestamps_lt(deps, msg.first_proposed_at);
                 resp.first_proposed_at := msg.first_proposed_at;
                 resp.witnessed_at := proposed_exec_ts;
                 unicast(self, resp, msg.src);
 
-                current_txn(self) := option[txn_t].just(msg.txn);
+                current_txn(self) := option[command_t].just(msg.cmd);
 
                 protocol.handle_preaccepted(self, msg, resp);
             }
@@ -158,9 +152,6 @@ process coordinator(self: node_id) = {
 
                 if msg.ok {
                     # Merge all dependencies
-                    for it, d in msg.deps {
-                        deps(self).insert(d);
-                    }
 
                     if msg.witnessed_at = msg.first_proposed_at {
                         fastpath_accepts(self) := fastpath_accepts(self).add(msg.src);
@@ -177,7 +168,7 @@ process coordinator(self: node_id) = {
                         var resp: msg_t;
                         resp.kind := commit_kind;
                         resp.src := self;
-                        resp.txn := msg.txn;
+                        resp.cmd := msg.cmd;
                         resp.execute_at := msg.first_proposed_at;
                         replica_multicast(self, resp);
                     } else if slowpath_accepts(self).majority(nset.fullset) {
@@ -201,15 +192,15 @@ process coordinator(self: node_id) = {
 
                 clock.merge(self, msg.execute_at);
 
-                var deps: vector[txn_t];
-                deps := dependencies(msg.txn, sb(self));
+                var deps: vector[command_t];
+                deps := dependencies(msg.cmd, sb(self));
                 deps := filter_timestamps_lt(deps, msg.execute_at);
 
                 var resp: msg_t;
                 resp.kind := accept_resp_kind;
                 resp.ok := true;
                 resp.src := self;
-                resp.txn := msg.txn;
+                resp.cmd := msg.cmd;
                 resp.deps := deps;
                 unicast(self, resp, msg.src);
 
