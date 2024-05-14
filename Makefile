@@ -12,7 +12,10 @@ LCHFLAGS=node_id.max=4 iters=2500
 EXE=protocol
 
 CHK=ivy_check
-CHKFLAGS=isolate=this detailed=false
+CHKFLAGS=detailed=false
+
+CTAGS=ctags
+CTAGSFLAGS=--options=./scripts/ivy.ctags
 
 .PHONY: all build clean test bmc
 all: build test Makefile
@@ -26,8 +29,14 @@ test: build
 	cd $(SRCDIR); $(LCH) $(LCHFLAGS) $(EXE) #| sed -e '/{$$/,/}$$/ d'
 
 proof:
-	#cd $(SRCDIR); $(CHK) $(CHKFLAGS) $(TOPLVLSRC)
 	cd $(SRCDIR); $(CHK) $(CHKFLAGS) $(ABSSRC)
+	cd $(SRCDIR); $(CHK) $(CHKFLAGS) $(TOPLVLSRC)
+
+tags: $(SRCS)
+	rm tags || true
+	$(CTAGS) $(CTAGSFLAGS) -L<(find ~/code/ivy/ivy/include/1.8)
+	$(CTAGS) $(CTAGSFLAGS) --append -R
+
 
 clean:
 	./scripts/ivy_clean.sh
