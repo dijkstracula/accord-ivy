@@ -11,25 +11,26 @@ global {
     instance sequence : unbounded_sequence
 
     class timestamp = {
-        # TODO: epoch???  Probably not necessary for us.
+        field node : node_id
         field real : walltime
         field seqid: sequence
     }
 
     function ts_eq (LHS: timestamp, RHS: timestamp) =
+        LHS.node = RHS.node & 
         LHS.real = RHS.real & 
         LHS.seqid = RHS.seqid
 
     function ts_lt (LHS: timestamp, RHS: timestamp) =
-        LHS.real < RHS.real |
-        LHS.real = RHS.real & LHS.seqid < RHS.seqid 
-
-    function ts_gt (LHS: timestamp, RHS: timestamp) =
-        LHS.real > RHS.real |
-        LHS.real = RHS.real & LHS.seqid > RHS.seqid 
+        LHS.node < RHS.node |
+        LHS.node = RHS.node & LHS.real < RHS.real |
+        LHS.node = RHS.node & LHS.real = RHS.real & LHS.seqid < RHS.seqid 
 
     function ts_le (LHS: timestamp, RHS: timestamp) =
         ts_eq(LHS, RHS) | ts_lt(LHS, RHS)
+
+    function ts_gt (LHS: timestamp, RHS: timestamp) =
+        ~ts_le(LHS,RHS)
 
     
     action next(self: timestamp) returns (ret: timestamp) = {
@@ -48,7 +49,7 @@ global {
     }
 }
 
-module time = {
+module time(self: node_id) = {
 
     implementation {
         # Our implementation of gettimeofday()
@@ -85,6 +86,7 @@ module time = {
             #receive a timestamp from the outside world.  Else, we will
             #never see the walltime go backwards.
 
+            ret.node := self;
             if latest_observed.real >= curr_time {
                 ret.real := latest_observed.real;
                 ret.seqid := latest_observed.seqid.next;

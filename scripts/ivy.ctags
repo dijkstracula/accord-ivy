@@ -23,15 +23,17 @@
 --langmap=ivy:.ivy
 
 --kinddef-ivy=c,class,classes
+--kinddef-ivy=d,definition,definitions
 --kinddef-ivy=m,module,modules
 --kinddef-ivy=f,function,functions
 --kinddef-ivy=v,var,vars
 
---regex-ivy=/^[ \t]*class[ \t]+([a-zA-Z0-9_]+)/\1/c/{scope=push}
---regex-ivy=/^[ \t]*isolate[ \t]+([a-zA-Z0-9_]+)/\1/c/{scope=push}
---regex-ivy=/^[ \t]*subclass[ \t]+([a-zA-Z0-9_]+)/\1/c/{scope=push}
---regex-ivy=/^[ \t]*module[ \t]+([a-zA-Z0-9_]+)/\1/m/{scope=push}
---regex-ivy=/^[ \t]*process[ \t]+([a-zA-Z0-9_]+)/\1/m/{scope=push}
+--regex-ivy=/^[ \t]*class[ \t]+([a-zA-Z0-9_]+)/\1/c/{scope=set}
+--regex-ivy=/^[ \t]*isolate[ \t]+([a-zA-Z0-9_]+)/\1/c/{scope=set}
+--regex-ivy=/^[ \t]*subclass[ \t]+([a-zA-Z0-9_]+)/\1/c/{scope=set}
+--regex-ivy=/^[ \t]*module[ \t]+([a-zA-Z0-9_]+)/\1/m/{scope=set}
+--regex-ivy=/^[ \t]*process[ \t]+([a-zA-Z0-9_]+)/\1/m/{scope=set}
+--regex-ivy=/^[ \t]*type [ \t]+([a-zA-Z0-9_]+)/\1/d/{scope=set}
 
 --regex-ivy=/^[ \t]*(implement|implementation)[ \t]+([a-zA-Z0-9_.]+)/\2/f/{scope=push}
 --regex-ivy=/^[ \t]*action[ \t]+([a-zA-Z0-9_]+)/\1/f/

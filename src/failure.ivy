@@ -21,10 +21,11 @@ module failure_detector(self: node_id) = {
 
     after init {
         # Why can't this be a CLI argument?
-        electorate_size := 5;
+        electorate_size := 4;
 
         var i: nat := 1;
         var curr := self;
+        #var curr: node_id := 0; # TODO: multiply assigned error in ivy_check?
         while i <= electorate_size {
             my_electorate := my_electorate.add(curr);
             if curr = curr.max {

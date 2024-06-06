@@ -24,7 +24,6 @@ process coordinator(self: node_id) = {
     # state structure, keyed on txn id or something.
 
     var current_txn: option[command_t]
-
     var slowpath_accepts : nset
     var fastpath_accepts : nset
 
@@ -34,7 +33,7 @@ process coordinator(self: node_id) = {
     # TODO: is this actually correct
     var sb: store_buffer
 
-    instance clock : time
+    instance clock : time(self)
     instance sock : net.socket
 
     instance fd : failure_detector(self)
@@ -59,53 +58,47 @@ process coordinator(self: node_id) = {
                 current_txn(self) := option[command_t].empty();
             }
 
-            # TODO: how can I create a well-formed multi-key txn
-            # involving both reads and writes???
             export action client_request(self: node_id, k: key, v: value) = {
-                if self = 0 & ~client_in_flight(self) {
-                #if ~client_in_flight(self) {
-                #if true {
-                    client_in_flight(self) := true;
+                client_in_flight(self) := true;
 
-                    var now := clock(self).now();
+                var now := clock(self).now();
 
-                    var txns : vector[txn_t];
-                    var t: txn_t;
-                    t.kind := write_kind;
-                    t.k := 0; #cast(self);
-                    t.v := option[value].just(v);
-                    txns := txns.append(t);
+                var txns : vector[txn_t];
+                var t: txn_t;
+                t.kind := write_kind;
+                t.k := 0; #cast(self);
+                t.v := option[value].just(v);
+                txns := txns.append(t);
 
-                    #var i: index := 0;
-                    #while i < reads.end() {
-                    #    var q: txn_t;
-                    #    q.kind := read_kind;
-                    #    q.k := reads.get(i);
-                    #    q.v := option[value].empty;
-                    #     qs := qs.append(q);
+                #var i: index := 0;
+                #while i < reads.end() {
+                #    var q: txn_t;
+                #    q.kind := read_kind;
+                #    q.k := reads.get(i);
+                #    q.v := option[value].empty;
+                #     qs := qs.append(q);
 
-                    #    i := i + 1;
-                    #}
+                #    i := i + 1;
+                #}
 
-                    var cmd : command_t;
-                    cmd.origin := self;
-                    cmd.id := next_txn_id(self);
-                    cmd.ts := now;
-                    cmd.queries := txns;
+                var cmd : command_t;
+                cmd.origin := self;
+                cmd.id := next_txn_id(self);
+                cmd.ts := now;
+                cmd.queries := txns;
 
-                    next_txn_id(self) := next_txn_id(self) + 1;
+                next_txn_id(self) := next_txn_id(self) + 1;
 
-                    var msg : msg_t;
-                    msg.kind := preaccept_kind;
-                    msg.src := self;
-                    msg.cmd := cmd;
-                    msg.first_proposed_at := now;
+                var msg : msg_t;
+                msg.kind := preaccept_kind;
+                msg.src := self;
+                msg.cmd := cmd;
+                msg.first_proposed_at := now;
 
-                    electorate_multicast(self, msg);
-                    req_in_flight(self) := true; #ghost
+                electorate_multicast(self, msg);
+                req_in_flight(self) := true; #ghost
 
-                    protocol.handle_requested(self, msg);
-                }
+                protocol.handle_requested(self, msg);
             }
             attribute client_request.weight = "0.10"
 
@@ -150,6 +143,7 @@ process coordinator(self: node_id) = {
                 #debug "preaccept_reply_msg_t.handle" with msg=msg;
                 assert(msg.kind = preaccept_resp_kind);
 
+                # CoordinateTransation::onPreAccepted
                 if msg.ok {
                     # Merge all dependencies
 
@@ -164,13 +158,16 @@ process coordinator(self: node_id) = {
                     # single timestamp may be recovered and it is decided
                     # immediately.
 
-                    if fastpath_accepts(self).unanimity(fd.my_electorate(self)) {
+                    #if fastpath_accepts(self).unanimity(fd.my_electorate(self)) {
+                    if fastpath_accepts(self).card = cast(node_id.max) - 1 {
                         var resp: msg_t;
                         resp.kind := commit_kind;
                         resp.src := self;
                         resp.cmd := msg.cmd;
                         resp.execute_at := msg.first_proposed_at;
                         replica_multicast(self, resp);
+
+                        # Now, we move to the execution protocol.
                     } else if slowpath_accepts(self).majority(nset.fullset) {
                         assert false; # TODO: handle slow path later on
                         #var resp: accept_msg_t;
@@ -281,13 +278,12 @@ process coordinator(self: node_id) = {
                 req_in_flight(N) := false;
             }
 
-            #before read(self: node_id, keys: vector[key]) {
-                # TODO: how do I make the environment enforce that they give
-                # me a non-empty keyset?  I've done this before with a
-                # precondition, I thought...
-                #                require keys.end > 0;
-                #}
+            before client_request(self: node_id, k: key, v: value) {
+                #assert self = 0;
+                assert ~client_in_flight(self)
+            }
         }
     }
 }
 
+attribute method=bmc[10]
