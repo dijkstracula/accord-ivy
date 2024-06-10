@@ -22,9 +22,9 @@ global {
         LHS.seqid = RHS.seqid
 
     function ts_lt (LHS: timestamp, RHS: timestamp) =
-        LHS.node < RHS.node |
-        LHS.node = RHS.node & LHS.real < RHS.real |
-        LHS.node = RHS.node & LHS.real = RHS.real & LHS.seqid < RHS.seqid 
+        LHS.real < RHS.real |
+        LHS.real = RHS.real & LHS.seqid < RHS.seqid |
+        LHS.real = RHS.real & LHS.seqid < RHS.seqid | LHS.node < RHS.node
 
     function ts_le (LHS: timestamp, RHS: timestamp) =
         ts_eq(LHS, RHS) | ts_lt(LHS, RHS)
@@ -34,15 +34,18 @@ global {
 
     
     action next(self: timestamp) returns (ret: timestamp) = {
+        ret.node := self.node;
         ret.real  := self.real;
         ret.seqid := self.seqid.next();
     }
 
     action max(self: timestamp, other: timestamp) returns (ret: timestamp) = {
-        if self < other {
+        if ~(self < other) {
+            ret.node := self.node;
             ret.real  := self.real;
             ret.seqid := self.seqid;
         } else {
+            ret.node := other.node;
             ret.real  := other.real;
             ret.seqid := other.seqid;
         }
@@ -61,6 +64,7 @@ module time(self: node_id) = {
 
         after init {
             curr_time := 1;
+            latest_observed.node := self;
             latest_observed.real := 0;
             latest_observed.seqid := 0;
 
@@ -86,7 +90,7 @@ module time(self: node_id) = {
             #receive a timestamp from the outside world.  Else, we will
             #never see the walltime go backwards.
 
-            ret.node := self;
+            ret.node := latest_observed.node;
             if latest_observed.real >= curr_time {
                 ret.real := latest_observed.real;
                 ret.seqid := latest_observed.seqid.next;
@@ -110,7 +114,7 @@ module time(self: node_id) = {
 
     # Our clock must always move forward, no matter how coarse the real clock
     # is.
-    invariant [clock_monotonicity] ts_lt(prev_issued, latest_observed) | ts_eq(prev_issued, latest_observed)
+    invariant [clock_monotonicity] ts_le(prev_issued, latest_observed)
 
     specification {
         var prev_issued : timestamp

@@ -98,6 +98,7 @@ action max_timestamp(txns: vector[command_t]) returns (ret: timestamp) = {
         # TODO: I guess I'm doing this to return the "minimal" timestamp.  Is
         # there a way to do this in a more principled way?  (Or should I just
         # return an option?)
+        ret.node := 0;
         ret.real := 0;
         ret.seqid := 0;
     } else {

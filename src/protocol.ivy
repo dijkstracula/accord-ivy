@@ -113,13 +113,14 @@ process coordinator(self: node_id) = {
                 var deps: vector[command_t];
                 deps := dependencies(msg.cmd, sb(self));
 
-                var mc: timestamp;
+                var mc := max_timestamp(deps);
+
                 var proposed_exec_ts: timestamp;
-                mc := max_timestamp(deps);
                 if ts_gt(msg.first_proposed_at, mc) {
                     proposed_exec_ts := msg.first_proposed_at; 
                 } else {
-                    proposed_exec_ts.real   := mc.real;
+                    proposed_exec_ts := mc;
+                    proposed_exec_ts.real  := mc.real;
                     proposed_exec_ts.seqid := mc.seqid.next();
                 }
 
@@ -136,7 +137,7 @@ process coordinator(self: node_id) = {
 
                 current_txn(self) := option[command_t].just(msg.cmd);
 
-                protocol.handle_preaccepted(self, msg, resp);
+                protocol.handle_preaccepted(self, resp);
             }
 
             action preaccept_reply_handle(self: node_id, msg: msg_t) = {

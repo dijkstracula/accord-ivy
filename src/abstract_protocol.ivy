@@ -76,13 +76,13 @@ isolate protocol = {
             requested(self, msg.cmd, msg.first_proposed_at) := true;
         }
 
-        action handle_preaccepted(self: node_id, msg: msg_t, resp: msg_t) = {
-            debug "protocol.handle_preaccepted" with self=self, msg=msg, resp=resp;
-            require msg.kind = preaccept_kind;
+        action handle_preaccepted(self: node_id, resp: msg_t) = {
+            debug "protocol.handle_preaccepted" with self=self, resp=resp;
             require resp.kind = preaccept_resp_kind;
 
-            var tao := msg.cmd;
+            var tao := resp.cmd;
 
+            # Observation B.1.
             # For any replica P and transaction τ, if PreAccepted(τ) then the
             # following are true:
 
@@ -90,14 +90,17 @@ isolate protocol = {
             # is assigned by the original coordinator for τ (True by default in
             # our implemention?)
 
+            # 3. P.t_0t <= P.t
+            require ts_le(resp.first_proposed_at, resp.witnessed_at);
+
+
             # TODO: The hand proof paramerizes on the replica whereas we are
             # not.  What do?
             
             # 2. P.t0τ.seq = 0
-            seqid_is_zero(msg);
+            seqid_is_zero(resp);
 
             # 3. P.t0 τ ≤ P.tτ
-            require msg.first_proposed_at = resp.first_proposed_at;
             require ts_le(resp.first_proposed_at, resp.witnessed_at);
 
             # Observation B.2.1.2. No two transactions are assigned the same t0.
